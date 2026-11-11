@@ -1,0 +1,1676 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmartFactory – Monitoramento IoT</title>
+<meta name="description" content="SmartFactory: temperatura (MAX6675), corrente (SCT-013) e inclinação (MPU6050) da bancada Imbil INI 25-150, com saúde e alertas.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- Tailwind CSS (gera as classes direto no navegador) -->
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.3/dist/index.global.js"></script>
+<style type="text/tailwindcss">
+  @theme {
+    --color-marinho-950: #040a14;
+    --color-marinho-900: #071121;
+    --color-marinho-850: #0a172b;
+    --color-marinho-800: #0e1e36;
+    --color-marinho-700: #15294a;
+    --color-linha: #1b3053;
+    --color-tinta: #e3edf9;
+    --color-tinta-2: #a3b6d1;
+    --color-tinta-3: #6f86a8;
+    --color-ciano: #22d3ee;
+    --color-ok: #34d399;
+    --color-atencao: #fbbf24;
+    --color-critico: #fb4f6b;
+    --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+  }
+</style>
+
+<!-- Componentes visuais (CSS puro: funciona mesmo antes do Tailwind carregar) -->
+<style>
+  :root {
+    --mar-950: #040a14; --mar-900: #071121; --mar-850: #0a172b; --mar-800: #0e1e36; --mar-700: #15294a; --mar-600: #1f3a63;
+    --linha: #1b3053; --linha-forte: #27436f;
+    --tinta: #e3edf9; --tinta-2: #a3b6d1; --tinta-3: #6f86a8;
+    --ciano: #22d3ee; --ciano-2: #67e8f9;
+    --ok: #34d399; --atencao: #fbbf24; --critico: #fb4f6b; --sem: #5b6b85;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--mar-950); color: var(--tinta); margin: 0; }
+  body {
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; min-height: 100vh;
+  }
+  /* malha de prancheta técnica ao fundo */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(rgba(34,211,238,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34,211,238,.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+    -webkit-mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 20%, transparent 80%);
+            mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 20%, transparent 80%);
+  }
+  header, main, footer { position: relative; z-index: 1; }
+
+  :focus-visible { outline: 2px solid var(--ciano); outline-offset: 2px; border-radius: 6px; }
+
+  .painel {
+    background: linear-gradient(180deg, rgba(14,30,54,.94), rgba(9,21,39,.94));
+    border: 1px solid var(--linha); border-radius: 14px; min-width: 0;
+  }
+  .painel-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 16px 0; flex-wrap: wrap; }
+  .titulo { font-family: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif; font-weight: 600; font-size: 16px; letter-spacing: .005em; margin: 0; color: var(--tinta); }
+  .sub { font-size: 12.5px; color: var(--tinta-3); margin: 2px 0 0; }
+
+  [hidden] { display: none !important; }
+  /* formulário de conexão: quebra de linha natural em telas menores */
+  .form-conexao { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+  .f-modo { flex: 0 1 230px; } .f-ip { flex: 3 1 280px; } .f-preset { flex: 1 1 150px; } .f-host { flex: 2 1 220px; }
+  .f-porta { flex: 0 0 86px; } .f-caminho { flex: 0 0 96px; } .f-tls { flex: 0 1 136px; } .f-topico { flex: 2 1 200px; }
+  .f-botoes { flex: 0 0 auto; display: flex; gap: 8px; } .f-login { flex: 1 1 100%; }
+  @media (max-width: 640px) { .f-modo, .f-preset { flex-basis: 100%; } .f-botoes { flex: 1 1 100%; } .f-botoes .botao:first-child { flex: 1; } }
+  /* campos e botões */
+  .campo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .campo > span { font-size: 11.5px; color: var(--tinta-3); font-weight: 500; }
+  .entrada {
+    width: 100%; min-width: 0; background: var(--mar-800); color: var(--tinta);
+    border: 1px solid var(--linha); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 14px;
+  }
+  .entrada:focus { outline: none; border-color: var(--ciano); box-shadow: 0 0 0 3px rgba(34,211,238,.18); }
+  select.entrada { appearance: none; padding-right: 28px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%236f86a8' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 9px center; }
+  .botao {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+    border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer;
+    background: var(--ciano); color: #032029; border: 1px solid var(--ciano);
+  }
+  .botao:hover { background: var(--ciano-2); }
+  .botao:disabled { opacity: .45; cursor: not-allowed; }
+  .botao-sec { background: var(--mar-800); color: var(--tinta); border-color: var(--linha-forte); font-weight: 500; }
+  .botao-sec:hover { background: var(--mar-700); }
+  .botao-mini { padding: 5px 10px; font-size: 12.5px; }
+  .botao-sec[aria-pressed="true"] { border-color: rgba(34,211,238,.6); color: var(--ciano-2); background: rgba(34,211,238,.08); }
+
+  /* pílulas de estado da conexão */
+  .pilula { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--tinta-2);
+    background: var(--mar-800); border: 1px solid var(--linha); border-radius: 999px; padding: 5px 12px 5px 10px; white-space: nowrap; }
+  .pilula i { width: 8px; height: 8px; border-radius: 50%; background: var(--sem); flex: none; }
+  .pilula[data-estado="ok"] i { background: var(--ok); box-shadow: 0 0 8px rgba(52,211,153,.7); }
+  .pilula[data-estado="espera"] i { background: var(--atencao); }
+  .pilula[data-estado="erro"] i { background: var(--critico); }
+
+  /* chips de nível: ícone + texto (a cor nunca vem sozinha) */
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; line-height: 1;
+    padding: 4px 9px 4px 6px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+  .chip svg { width: 14px; height: 14px; flex: none; }
+  .chip[data-nivel="0"] { color: var(--ok); background: rgba(52,211,153,.10); border-color: rgba(52,211,153,.32); }
+  .chip[data-nivel="1"] { color: var(--atencao); background: rgba(251,191,36,.10); border-color: rgba(251,191,36,.35); }
+  .chip[data-nivel="2"] { color: var(--critico); background: rgba(251,79,107,.12); border-color: rgba(251,79,107,.4); }
+  .chip[data-nivel="sem"] { color: var(--tinta-3); background: rgba(111,134,168,.08); border-color: rgba(111,134,168,.25); }
+  .chip[data-nivel="info"] { color: var(--ciano-2); background: rgba(34,211,238,.08); border-color: rgba(34,211,238,.3); }
+
+  /* estado geral */
+  .estado { display: flex; gap: 14px; align-items: center; padding: 16px; border-radius: 14px; border: 1px solid var(--linha);
+    background: linear-gradient(120deg, rgba(14,30,54,.95), rgba(9,21,39,.95)); }
+  .estado-icone { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none;
+    background: rgba(111,134,168,.1); color: var(--tinta-3); }
+  .estado-icone svg { width: 26px; height: 26px; }
+  .estado[data-nivel="0"] { border-color: rgba(52,211,153,.35); }
+  .estado[data-nivel="0"] .estado-icone { background: rgba(52,211,153,.12); color: var(--ok); }
+  .estado[data-nivel="1"] { border-color: rgba(251,191,36,.45); }
+  .estado[data-nivel="1"] .estado-icone { background: rgba(251,191,36,.12); color: var(--atencao); }
+  .estado[data-nivel="2"] { border-color: rgba(251,79,107,.55); animation: alarme 1.4s ease-in-out infinite; }
+  .estado[data-nivel="2"] .estado-icone { background: rgba(251,79,107,.14); color: var(--critico); }
+  @keyframes alarme { 50% { box-shadow: 0 0 0 4px rgba(251,79,107,.18); } }
+  .estado-titulo { font-family: "IBM Plex Sans Condensed", sans-serif; font-weight: 700; font-size: 22px; line-height: 1.1; margin: 0; }
+
+  /* gauges de saúde */
+  .gauge { text-align: center; }
+  .gauge > svg { width: 100%; max-width: 220px; display: block; margin: 0 auto; overflow: visible; }
+  .g-trilho { fill: none; stroke: var(--mar-700); stroke-width: 13; stroke-linecap: round; }
+  .g-valor { fill: none; stroke: var(--sem); stroke-width: 13; stroke-linecap: round; transition: stroke-dasharray .6s ease, stroke .3s; }
+  .gauge[data-nivel="0"] .g-valor { stroke: var(--ok); }
+  .gauge[data-nivel="1"] .g-valor { stroke: var(--atencao); }
+  .gauge[data-nivel="2"] .g-valor { stroke: var(--critico); }
+  .g-marca { stroke: #0b1a30; stroke-width: 3; }
+  .g-num { font-family: "IBM Plex Sans", sans-serif; font-weight: 700; font-size: 34px; fill: var(--tinta); }
+  .gauge.antigo { opacity: .5; }
+  .composicao { display: grid; gap: 7px; margin-top: 12px; text-align: left; }
+  .comp-linha { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 12.5px; color: var(--tinta-2); }
+  .comp-linha b { font-weight: 600; color: var(--tinta); font-variant-numeric: tabular-nums; }
+  .comp-barra { grid-column: 1 / -1; height: 4px; border-radius: 99px; background: var(--mar-700); overflow: hidden; }
+  .comp-barra i { display: block; height: 100%; width: 0; border-radius: 99px; background: var(--sem); transition: width .5s ease; }
+  .comp-barra i[data-nivel="0"] { background: var(--ok); }
+  .comp-barra i[data-nivel="1"] { background: var(--atencao); }
+  .comp-barra i[data-nivel="2"] { background: var(--critico); }
+
+  /* alertas */
+  .alerta { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 10px 12px; border-radius: 10px;
+    background: rgba(111,134,168,.07); border: 1px solid var(--linha); border-left: 3px solid var(--sem); }
+  .alerta svg { width: 18px; height: 18px; margin-top: 1px; color: var(--tinta-3); }
+  .alerta[data-nivel="1"] { border-left-color: var(--atencao); background: rgba(251,191,36,.06); }
+  .alerta[data-nivel="1"] svg { color: var(--atencao); }
+  .alerta[data-nivel="2"] { border-left-color: var(--critico); background: rgba(251,79,107,.07); }
+  .alerta[data-nivel="2"] svg { color: var(--critico); }
+  .alerta-titulo { font-weight: 600; color: var(--tinta); }
+  .alerta-texto { grid-column: 2; font-size: 12.5px; color: var(--tinta-2); }
+
+  /* cartões de leitura */
+  .kpi { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .kpi-valor { font-family: "IBM Plex Sans", sans-serif; font-weight: 700; font-size: 40px; line-height: 1; letter-spacing: -.01em; }
+  .kpi-valor small { font-size: 16px; font-weight: 500; color: var(--tinta-3); margin-left: 4px; letter-spacing: 0; }
+  .medidor { position: relative; height: 8px; border-radius: 99px; background: var(--mar-700); margin: 4px 0 16px; }
+  .m-zona { position: absolute; top: 0; bottom: 0; }
+  .m-zona.atencao { background: rgba(251,191,36,.22); }
+  .m-zona.critico { background: rgba(251,79,107,.26); border-radius: 0 99px 99px 0; }
+  .m-valor { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 99px; background: var(--sem); transition: width .5s ease; }
+  .m-valor[data-nivel="0"] { background: var(--ok); }
+  .m-valor[data-nivel="1"] { background: var(--atencao); }
+  .m-valor[data-nivel="2"] { background: var(--critico); }
+  .m-marca { position: absolute; top: -3px; width: 2px; height: 14px; margin-left: -1px; background: var(--tinta-3); border-radius: 1px; }
+  .m-rotulo { position: absolute; top: 15px; transform: translateX(-50%); font-size: 11px; color: var(--tinta-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* gráficos */
+  .grafico { position: relative; height: 210px; }
+  .segmentado { display: inline-flex; border: 1px solid var(--linha-forte); border-radius: 8px; overflow: hidden; }
+  .segmentado button { background: var(--mar-800); color: var(--tinta-2); border: 0; padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .segmentado button + button { border-left: 1px solid var(--linha-forte); }
+  .segmentado button[aria-pressed="true"] { background: rgba(34,211,238,.14); color: var(--ciano-2); font-weight: 600; }
+
+  /* tabelas, listas e detalhes */
+  .tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .tabela th { text-align: left; font-weight: 500; color: var(--tinta-3); padding: 6px 10px; border-bottom: 1px solid var(--linha); white-space: nowrap; }
+  .tabela td { padding: 6px 10px; border-bottom: 1px solid rgba(27,48,83,.55); color: var(--tinta-2); white-space: nowrap; }
+  .tabela td:first-child { color: var(--tinta-3); }
+  .grade-eixos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .eixo { background: var(--mar-800); border: 1px solid var(--linha); border-radius: 10px; padding: 8px 10px; }
+  .eixo span { display: block; font-size: 11.5px; color: var(--tinta-3); }
+  .eixo b { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .enc { background: var(--mar-800); border: 1px solid var(--linha); border-radius: 10px; padding: 10px; }
+  .enc b { font-size: 14px; font-weight: 600; }
+  .enc p { margin: 2px 0 0; font-size: 12px; color: var(--tinta-3); font-variant-numeric: tabular-nums; }
+  .info-linha { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(27,48,83,.6); font-size: 13px; }
+  .info-linha:last-child { border-bottom: 0; }
+  .info-linha span:first-child { color: var(--tinta-3); }
+  .info-linha span:last-child { text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .led { width: 26px; height: 26px; border-radius: 50%; background: var(--mar-700); border: 1px solid var(--linha-forte); margin: 2px auto 6px; transition: .15s; }
+  .led.on { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 14px rgba(52,211,153,.75); }
+  .evento { display: grid; grid-template-columns: 62px auto 1fr; gap: 8px; align-items: start; padding: 7px 0; border-bottom: 1px solid rgba(27,48,83,.55); font-size: 12.5px; }
+  .evento:last-child { border-bottom: 0; }
+  .evento time { color: var(--tinta-3); font-variant-numeric: tabular-nums; }
+  .evento svg { width: 15px; height: 15px; margin-top: 1px; color: var(--tinta-3); }
+  .evento[data-tipo="atencao"] svg { color: var(--atencao); }
+  .evento[data-tipo="critico"] svg, .evento[data-tipo="erro"] svg { color: var(--critico); }
+  .evento[data-tipo="ok"] svg { color: var(--ok); }
+  .evento[data-tipo="info"] svg { color: var(--ciano); }
+  .evento span { color: var(--tinta-2); overflow-wrap: anywhere; }
+  pre.json { margin: 0; max-height: 300px; overflow: auto; background: var(--mar-900); border: 1px solid var(--linha); border-radius: 10px;
+    padding: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--tinta-2); }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  details > summary { cursor: pointer; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary .seta { transition: transform .2s; display: inline-block; }
+  details[open] > summary .seta { transform: rotate(90deg); }
+
+  /* diálogo de limites */
+  dialog { margin: auto; background: var(--mar-850); color: var(--tinta); border: 1px solid var(--linha-forte); border-radius: 16px; padding: 0;
+    width: min(580px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+  dialog::backdrop { background: rgba(2,6,14,.72); backdrop-filter: blur(3px); }
+  .grade-limites { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px 12px; align-items: center; }
+
+  .vazio { color: var(--tinta-3); font-size: 13px; padding: 10px 2px; }
+  .msg-conexao { font-size: 12.5px; color: var(--tinta-2); }
+  .msg-conexao[data-tipo="erro"] { color: #ffb4c0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<!-- Bibliotecas -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+</head>
+
+<body>
+<!-- ===================== CABEÇALHO + CONEXÃO MQTT ===================== -->
+<header class="lg:sticky lg:top-0 z-30 border-b border-linha bg-marinho-900/90 backdrop-blur">
+  <div class="mx-auto max-w-[1520px] px-4 pt-3 pb-2 flex flex-wrap items-center gap-x-5 gap-y-2">
+    <div class="flex items-center gap-3 mr-auto min-w-0">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" class="flex-none">
+        <rect x="1.5" y="1.5" width="31" height="31" rx="8" fill="none" stroke="#22d3ee" stroke-width="1.6" opacity=".9"/>
+        <path d="M6 18h5l3-7 5 13 3-8h6" fill="none" stroke="#67e8f9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="min-w-0">
+        <h1 class="font-cond text-[21px] font-bold leading-tight m-0 tracking-wide">SmartFactory</h1>
+        <p class="text-xs text-tinta-3 m-0 truncate">Monitoramento IoT da bancada Imbil INI 25-150</p>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="pilula" id="pilulaBroker" data-estado="off" role="status"><i></i><span>Desconectado</span></span>
+      <span class="pilula" id="pilulaPlaca" data-estado="off"><i></i><span>Placa: aguardando dados</span></span>
+      <button type="button" class="botao botao-sec botao-mini" id="btnLimites" aria-haspopup="dialog">
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10.5" cy="4" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.5" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12.5" cy="12" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+        Limites
+      </button>
+    </div>
+  </div>
+
+  <form id="formConexao" class="form-conexao mx-auto max-w-[1520px] px-4 pb-3" autocomplete="off" novalidate>
+    <label class="campo f-modo"><span>Conexão</span>
+      <select class="entrada" id="inModo">
+        <option value="direto">Direto na placa (IP)</option>
+        <option value="mqtt">Broker MQTT (WebSocket)</option>
+      </select>
+    </label>
+    <label class="campo f-ip" data-direto><span>IP da placa (aparece no Monitor Serial)</span>
+      <input class="entrada" id="inIpPlaca" placeholder="ex.: 10.110.22.45" spellcheck="false" inputmode="url">
+    </label>
+    <label class="campo f-preset" data-mqtt><span>Broker</span>
+      <select class="entrada" id="inPreset">
+        <option value="emqx">EMQX público</option>
+        <option value="hivemq">HiveMQ público</option>
+        <option value="local">Broker local (rede da bancada)</option>
+        <option value="custom">Personalizado</option>
+      </select>
+    </label>
+    <label class="campo f-host" data-mqtt><span>Host ou IP do broker (não é o IP da placa)</span>
+      <input class="entrada" id="inHost" placeholder="broker.emqx.io" spellcheck="false">
+    </label>
+    <label class="campo f-porta" data-mqtt><span>Porta</span>
+      <input class="entrada" id="inPorta" type="number" min="1" max="65535" inputmode="numeric">
+    </label>
+    <label class="campo f-caminho" data-mqtt><span>Caminho</span>
+      <input class="entrada" id="inCaminho" placeholder="/mqtt" spellcheck="false">
+    </label>
+    <label class="campo f-tls" data-mqtt><span>Protocolo</span>
+      <select class="entrada" id="inTls">
+        <option value="ws">ws:// (sem TLS)</option>
+        <option value="wss">wss:// (TLS)</option>
+      </select>
+    </label>
+    <label class="campo f-topico" data-mqtt><span>Tópico base da bancada</span>
+      <input class="entrada" id="inTopico" placeholder="senai/imbil/bancada01" spellcheck="false">
+    </label>
+    <div class="f-botoes">
+      <button type="submit" class="botao" id="btnConectar">Conectar</button>
+      <button type="button" class="botao botao-sec" id="btnDesconectar" disabled>Desconectar</button>
+    </div>
+    <details class="f-login" data-mqtt>
+      <summary class="text-xs text-tinta-3 inline-flex items-center gap-1"><span class="seta">›</span> Login do broker (opcional)</summary>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+        <label class="campo"><span>Usuário</span><input class="entrada" id="inUsuario" spellcheck="false" autocomplete="off"></label>
+        <label class="campo"><span>Senha</span><input class="entrada" id="inSenha" type="password" autocomplete="off"></label>
+      </div>
+    </details>
+  </form>
+  <div class="mx-auto max-w-[1520px] px-4 pb-3 -mt-1 flex flex-wrap gap-x-4 gap-y-1 items-center">
+    <span class="text-xs text-tinta-3"><span id="rotuloUrl">Endereço</span>: <span class="mono text-tinta-2" id="urlInfo">—</span></span>
+    <span class="text-xs text-tinta-3"><span id="rotuloFiltro">Assinatura</span>: <span class="mono text-tinta-2" id="filtroInfo">—</span></span>
+    <span class="msg-conexao" id="msgConexao" role="status" aria-live="polite"></span>
+  </div>
+</header>
+
+<main class="mx-auto max-w-[1520px] p-4 grid gap-4 lg:grid-cols-12">
+
+  <!-- ===================== ESTADO GERAL ===================== -->
+  <section class="estado lg:col-span-12" id="estadoGeral" data-nivel="sem" role="status" aria-live="polite">
+    <div class="estado-icone" id="estadoIcone"></div>
+    <div class="min-w-0">
+      <p class="estado-titulo" id="estadoTitulo">Aguardando dados</p>
+      <p class="sub" id="estadoTexto">Conecte ao broker para receber as leituras da placa.</p>
+    </div>
+  </section>
+
+  <!-- ===================== LEITURAS (KPIs) ===================== -->
+  <section class="lg:col-span-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Leituras atuais">
+    <article class="painel kpi" data-var="temp">
+      <div class="flex items-start justify-between gap-2">
+        <div><h3 class="titulo">Temperatura</h3><p class="sub">Sensor MAX6675 (termopar tipo K)</p></div>
+        <span class="chip" data-chip data-nivel="sem">Sem dados</span>
+      </div>
+      <div class="kpi-valor"><span data-valor>—</span><small>°C</small></div>
+      <div class="medidor" data-medidor></div>
+      <p class="sub" data-extra>Aguardando leitura.</p>
+    </article>
+    <article class="painel kpi" data-var="corrente">
+      <div class="flex items-start justify-between gap-2">
+        <div><h3 class="titulo">Corrente</h3><p class="sub">Sensor SCT-013</p></div>
+        <span class="chip" data-chip data-nivel="sem">Sem dados</span>
+      </div>
+      <div class="kpi-valor"><span data-valor>—</span><small>A</small></div>
+      <div class="medidor" data-medidor></div>
+      <p class="sub" data-extra>Aguardando leitura.</p>
+    </article>
+    <article class="painel kpi" data-var="incl">
+      <div class="flex items-start justify-between gap-2">
+        <div><h3 class="titulo">Inclinação</h3><p class="sub">Sensor MPU6050</p></div>
+        <span class="chip" data-chip data-nivel="sem">Sem dados</span>
+      </div>
+      <div class="kpi-valor"><span data-valor>—</span></div>
+      <div class="medidor" data-medidor></div>
+      <div class="flex items-end justify-between gap-3">
+        <p class="sub" data-extra>Aguardando leitura.</p>
+        <button type="button" class="botao botao-sec botao-mini flex-none" id="btnZerarIncl" disabled title="Usa a posição atual da placa como zero">Zerar</button>
+      </div>
+    </article>
+    <article class="painel kpi" data-var="rpm">
+      <div class="flex items-start justify-between gap-2">
+        <div><h3 class="titulo">Rotação</h3><p class="sub">Encoder óptico (ENC_A)</p></div>
+        <span class="chip" data-chip data-nivel="sem">Sem dados</span>
+      </div>
+      <div class="kpi-valor"><span data-valor>—</span><small>rpm</small></div>
+      <div class="medidor" data-medidor-rpm><div class="m-valor" data-nivel="0"></div></div>
+      <p class="sub" data-extra>Aguardando leitura.</p>
+    </article>
+  </section>
+
+  <!-- ===================== SAÚDE E ALERTAS ===================== -->
+  <section class="painel lg:col-span-5" aria-labelledby="tSaude">
+    <div class="painel-cab">
+      <div>
+        <h2 class="titulo" id="tSaude">Saúde</h2>
+        <p class="sub">Índices de 0 a 100% calculados a partir das leituras e dos limites.</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3 p-4 pt-3">
+      <div class="gauge" id="gaugeBancada" data-nivel="sem">
+        <p class="text-[13px] font-semibold text-tinta-2 m-0 mb-1 leading-tight min-h-[2.5em] flex items-end justify-center">Saúde da bancada</p>
+        <svg viewBox="0 0 200 116" role="img" aria-labelledby="gbTxt">
+          <title id="gbTxt">Saúde da bancada</title>
+          <path class="g-trilho" d="M 20 100 A 80 80 0 0 1 180 100" pathLength="100"/>
+          <path class="g-valor" d="M 20 100 A 80 80 0 0 1 180 100" pathLength="100" style="stroke-dasharray:0 100"/>
+          <g class="g-marcas"></g>
+          <text class="g-num" x="100" y="96" text-anchor="middle">—</text>
+        </svg>
+        <span class="chip g-status" data-nivel="sem">Sem dados</span>
+        <div class="composicao" id="compBancada"></div>
+      </div>
+      <div class="gauge" id="gaugeMotor" data-nivel="sem">
+        <p class="text-[13px] font-semibold text-tinta-2 m-0 mb-1 leading-tight min-h-[2.5em] flex items-end justify-center">Saúde do motor INI 25-150</p>
+        <svg viewBox="0 0 200 116" role="img" aria-labelledby="gmTxt">
+          <title id="gmTxt">Saúde do motor INI 25-150</title>
+          <path class="g-trilho" d="M 20 100 A 80 80 0 0 1 180 100" pathLength="100"/>
+          <path class="g-valor" d="M 20 100 A 80 80 0 0 1 180 100" pathLength="100" style="stroke-dasharray:0 100"/>
+          <g class="g-marcas"></g>
+          <text class="g-num" x="100" y="96" text-anchor="middle">—</text>
+        </svg>
+        <span class="chip g-status" data-nivel="sem">Sem dados</span>
+        <div class="composicao" id="compMotor"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="painel lg:col-span-7" aria-labelledby="tAlertas">
+    <div class="painel-cab">
+      <div>
+        <h2 class="titulo" id="tAlertas">Alertas ativos</h2>
+        <p class="sub" id="alertasResumo">Nenhum alerta.</p>
+      </div>
+    </div>
+    <div class="p-4 pt-3 flex flex-col gap-2" id="listaAlertas" aria-live="polite"></div>
+  </section>
+
+  <!-- ===================== HISTÓRICO ===================== -->
+  <section class="painel lg:col-span-12" aria-labelledby="tHist">
+    <div class="painel-cab">
+      <div>
+        <h2 class="titulo" id="tHist">Histórico</h2>
+        <p class="sub">Linhas tracejadas: limite de atenção (amarelo) e crítico (vermelho).</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="segmentado" role="group" aria-label="Janela de tempo" id="janelas">
+          <button type="button" data-janela="120" aria-pressed="true">2 min</button>
+          <button type="button" data-janela="600" aria-pressed="false">10 min</button>
+          <button type="button" data-janela="1800" aria-pressed="false">30 min</button>
+        </div>
+        <button type="button" class="botao botao-sec botao-mini" id="btnTabela" aria-pressed="false">Tabela</button>
+        <button type="button" class="botao botao-sec botao-mini" id="btnCsv">Exportar CSV</button>
+      </div>
+    </div>
+    <div class="grid gap-4 p-4 md:grid-cols-3" id="areaGraficos">
+      <figure class="m-0 min-w-0"><figcaption class="text-[13px] text-tinta-2 mb-1">Temperatura (°C)</figcaption><div class="grafico"><canvas id="gTemp" aria-label="Histórico de temperatura"></canvas></div></figure>
+      <figure class="m-0 min-w-0"><figcaption class="text-[13px] text-tinta-2 mb-1">Corrente (A)</figcaption><div class="grafico"><canvas id="gCorrente" aria-label="Histórico de corrente"></canvas></div></figure>
+      <figure class="m-0 min-w-0"><figcaption class="text-[13px] text-tinta-2 mb-1">Inclinação (°)</figcaption><div class="grafico"><canvas id="gIncl" aria-label="Histórico de inclinação"></canvas></div></figure>
+    </div>
+    <div class="px-4 pb-4 overflow-x-auto" id="areaTabela" hidden>
+      <table class="tabela">
+        <thead><tr><th>Hora</th><th>Temperatura (°C)</th><th>Corrente (A)</th><th>Inclinação (°)</th><th>Rotação (rpm)</th></tr></thead>
+        <tbody id="corpoTabela"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================== DETALHES ===================== -->
+  <section class="painel lg:col-span-4" aria-labelledby="tMpu">
+    <div class="painel-cab">
+      <div><h2 class="titulo" id="tMpu">Acelerômetro e giroscópio</h2><p class="sub" id="mpuSub">Sensor MPU6050 (inclinação)</p></div>
+      <span class="chip" id="chipMpu" data-nivel="sem">Sem dados</span>
+    </div>
+    <div class="p-4 pt-3 flex flex-col gap-3">
+      <div class="grade-eixos">
+        <div class="eixo"><span>ax (g)</span><b id="vAx">—</b></div>
+        <div class="eixo"><span>ay (g)</span><b id="vAy">—</b></div>
+        <div class="eixo"><span>az (g)</span><b id="vAz">—</b></div>
+        <div class="eixo"><span>gx (°/s)</span><b id="vGx">—</b></div>
+        <div class="eixo"><span>gy (°/s)</span><b id="vGy">—</b></div>
+        <div class="eixo"><span>gz (°/s)</span><b id="vGz">—</b></div>
+      </div>
+      <div>
+        <div class="info-linha"><span>Inclinação (roll / pitch)</span><span id="vIncl">—</span></div>
+        <div class="info-linha"><span>Referência do zero</span><span id="vRef">—</span></div>
+        <div class="info-linha"><span>Temperatura do chip</span><span id="vMpuT">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="painel lg:col-span-4" aria-labelledby="tEnc">
+    <div class="painel-cab">
+      <div><h2 class="titulo" id="tEnc">Encoder e placa</h2><p class="sub">Optoacopladores PC817 e conexão</p></div>
+      <button type="button" class="botao botao-sec botao-mini" id="btnZerar" disabled>Zerar pulsos</button>
+    </div>
+    <div class="p-4 pt-3 flex flex-col gap-3">
+      <div class="grid grid-cols-2 gap-3 text-center">
+        <div class="enc"><div class="led" id="led1"></div><b>ENC_A</b><p><span id="vP1">0</span> pulsos</p><p id="vF1">—</p></div>
+        <div class="enc"><div class="led" id="led2"></div><b>ENC_B</b><p><span id="vP2">0</span> pulsos</p><p id="vF2">—</p></div>
+      </div>
+      <div>
+        <div class="info-linha"><span>Dispositivo</span><span id="vDisp">—</span></div>
+        <div class="info-linha"><span>Sinal Wi-Fi</span><span id="vRssi">—</span></div>
+        <div class="info-linha"><span>Tempo ligado</span><span id="vUptime">—</span></div>
+        <div class="info-linha"><span>Última leitura</span><span id="vIdade">—</span></div>
+        <div class="info-linha"><span>MQTT da placa</span><span id="vMqtt">—</span></div>
+        <div class="info-linha"><span>Display LCD</span><span id="vLcd">—</span></div>
+        <div class="info-linha"><span>Mensagens recebidas</span><span id="vMsgs">0</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="painel lg:col-span-4" aria-labelledby="tEventos">
+    <div class="painel-cab">
+      <div><h2 class="titulo" id="tEventos">Eventos</h2><p class="sub">Mudanças de estado, conexão e comandos</p></div>
+      <button type="button" class="botao botao-sec botao-mini" id="btnLimparEventos">Limpar</button>
+    </div>
+    <div class="px-4 pb-3 pt-2 max-h-[340px] overflow-y-auto" id="listaEventos"></div>
+  </section>
+
+  <section class="painel lg:col-span-12">
+    <details id="detJson">
+      <summary class="p-4 flex items-center gap-2">
+        <span class="seta text-ciano">›</span>
+        <span class="titulo">Última mensagem recebida</span>
+        <span class="sub mono ml-2" id="topicoJson"></span>
+      </summary>
+      <div class="px-4 pb-4"><pre class="json" id="rawJson">Nenhuma mensagem ainda.</pre></div>
+    </details>
+  </section>
+</main>
+
+<footer class="mx-auto max-w-[1520px] px-4 pb-8 text-xs text-tinta-3">
+  <b class="text-tinta-2">SmartFactory</b>, monitoramento IoT da bancada Imbil INI 25-150.
+  A placa publica em <span class="mono">&lt;tópico base&gt;/dados</span> (JSON), <span class="mono">/status</span> (online/offline) e escuta <span class="mono">/cmd</span>.
+  Os índices de saúde são didáticos: combinam as leituras com os limites configurados em Limites.
+</footer>
+
+<!-- ===================== DIÁLOGO DE LIMITES ===================== -->
+<dialog id="dlgLimites" aria-labelledby="tLimites">
+  <form method="dialog" id="formLimites">
+    <div class="p-5 pb-3 border-b border-linha">
+      <h2 class="titulo text-[18px]" id="tLimites">Limites de operação</h2>
+      <p class="sub">Os alertas e os índices de saúde usam estes valores. Eles ficam salvos neste navegador.</p>
+    </div>
+    <div class="p-5 flex flex-col gap-4">
+      <div class="grade-limites">
+        <span class="text-xs text-tinta-3"></span><span class="text-xs text-tinta-3">Atenção a partir de</span><span class="text-xs text-tinta-3">Crítico a partir de</span>
+        <span class="text-[13px]">Temperatura (°C)</span>
+        <input class="entrada" type="number" step="any" min="0" id="limTempW" required>
+        <input class="entrada" type="number" step="any" min="0" id="limTempC" required>
+        <span class="text-[13px]">Corrente (A)</span>
+        <input class="entrada" type="number" step="any" min="0" id="limCorW" required>
+        <input class="entrada" type="number" step="any" min="0" id="limCorC" required>
+        <span class="text-[13px]">Inclinação (°)</span>
+        <input class="entrada" type="number" step="any" min="0" id="limInclW" required>
+        <input class="entrada" type="number" step="any" min="0" id="limInclC" required>
+      </div>
+      <p class="sub">Inclinação: ângulo em relação ao zero. Com a bancada nivelada, use o botão Zerar no cartão de inclinação. Para testar os alertas, incline a placa ou baixe os limites.</p>
+      <label class="campo max-w-[260px]"><span>Pulsos por volta do disco do encoder</span>
+        <input class="entrada" type="number" min="1" step="1" id="limPpr" required>
+      </label>
+      <p class="msg-conexao" data-tipo="erro" id="erroLimites" role="alert"></p>
+    </div>
+    <div class="p-5 pt-3 border-t border-linha flex flex-wrap justify-between gap-2">
+      <button type="button" class="botao botao-sec" id="btnPadrao">Restaurar padrão</button>
+      <div class="flex gap-2">
+        <button type="button" class="botao botao-sec" id="btnCancelarLimites">Cancelar</button>
+        <button type="submit" class="botao" id="btnAplicarLimites" value="aplicar">Aplicar limites</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===================== APLICAÇÃO: MQTT, ALERTAS, SAÚDE E GRÁFICOS ===================== -->
+<script>
+(() => {
+  'use strict';
+
+  // ---------- utilidades ----------
+  const $ = (id) => document.getElementById(id);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+  const ehNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const fmt = (v, casas = 1) => ehNum(v)
+    ? v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas })
+    : '—';
+  const hora = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour12: false });
+  function lerArmazenado(chave, padrao) {
+    try { const s = localStorage.getItem(chave); return s ? JSON.parse(s) : padrao; } catch { return padrao; }
+  }
+  function salvarArmazenado(chave, valor) {
+    try { localStorage.setItem(chave, JSON.stringify(valor)); } catch { /* navegador sem armazenamento */ }
+  }
+
+  const ICONES = {
+    0: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 8.3l2 2 4-4.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    1: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.9l6.6 11.5H1.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6.2v3.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="11.5" r="1" fill="currentColor"/></svg>',
+    2: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.2 1.5h5.6l3.7 3.7v5.6l-3.7 3.7H5.2l-3.7-3.7V5.2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    sem: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.4 2.2"/><path d="M5.3 8h5.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    info: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8" cy="4.8" r="1" fill="currentColor"/></svg>',
+    ok: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 8.3l2 2 4-4.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  };
+  const ROTULO_NIVEL = { 0: 'Normal', 1: 'Atenção', 2: 'Crítico', sem: 'Sem dados' };
+  const ROTULO_SAUDE = { 0: 'Boa', 1: 'Atenção', 2: 'Crítica', sem: 'Sem dados' };
+
+  function chip(el, nivel, rotulos = ROTULO_NIVEL, texto) {
+    const k = (nivel === null || nivel === undefined) ? 'sem' : nivel;
+    el.dataset.nivel = k;
+    el.innerHTML = ICONES[k] || ICONES.info;           // ícones fixos (nunca dados recebidos)
+    const s = document.createElement('span');
+    s.textContent = texto || rotulos[k] || '';
+    el.appendChild(s);
+  }
+
+  // ---------- configuração ----------
+  const PRESETS = {
+    emqx:   { host: 'broker.emqx.io',    porta: 8084, caminho: '/mqtt', tls: true },
+    hivemq: { host: 'broker.hivemq.com', porta: 8884, caminho: '/mqtt', tls: true },
+    local:  { host: '192.168.0.10',      porta: 8083, caminho: '/mqtt', tls: false }
+  };
+  const CFG_PADRAO = { modo: 'direto', ipPlaca: '', preset: 'emqx', host: 'broker.emqx.io', porta: 8084, caminho: '/mqtt', tls: true, topico: 'senai/imbil/bancada01', usuario: '' };
+  const LIM_PADRAO = { temp: { warn: 65, crit: 80 }, corrente: { warn: 10, crit: 13 }, incl: { warn: 5, crit: 10 }, ppr: 1 };
+
+  const cfg = Object.assign({}, CFG_PADRAO, lerArmazenado('bancadaImbil.conexao', {}));
+  let limites = (() => {
+    const l = lerArmazenado('bancadaImbil.limites', null);
+    if (!l || !l.temp || !l.corrente) return structuredClone(LIM_PADRAO);
+    return Object.assign(structuredClone(LIM_PADRAO), l);
+  })();
+
+  // parâmetros na URL (ex.: ?ip=10.110.22.45  ou  ?modo=mqtt&host=192.168.0.10&porta=8083&tls=0&topico=senai/imbil/bancada02)
+  (() => {
+    const q = new URLSearchParams(location.search);
+    if (q.has('ip')) { cfg.ipPlaca = q.get('ip'); cfg.modo = 'direto'; }
+    if (q.has('modo')) cfg.modo = q.get('modo') === 'mqtt' ? 'mqtt' : 'direto';
+    if (q.has('host')) { cfg.host = q.get('host'); cfg.preset = 'custom'; cfg.modo = q.has('modo') ? cfg.modo : 'mqtt'; }
+    if (q.has('porta')) cfg.porta = +q.get('porta') || cfg.porta;
+    if (q.has('caminho')) cfg.caminho = q.get('caminho');
+    if (q.has('tls')) cfg.tls = !['0', 'false', 'nao', 'não'].includes(q.get('tls').toLowerCase());
+    if (q.has('topico')) cfg.topico = q.get('topico');
+  })();
+
+  const VARS = {
+    temp: {
+      nome: 'Temperatura', unidade: '°C', casas: 1,
+      titulo: { 1: 'Temperatura acima do normal', 2: 'Superaquecimento do motor' },
+      acao: { 1: 'Verifique a ventilação, a carga e a lubrificação dos mancais.', 2: 'Risco ao isolamento do motor. Reduza a carga ou desligue a bancada.' }
+    },
+    corrente: {
+      nome: 'Corrente', unidade: 'A', casas: 2,
+      titulo: { 1: 'Corrente elevada', 2: 'Sobrecarga elétrica' },
+      acao: { 1: 'Confira a abertura da válvula de recalque e a tensão de alimentação.', 2: 'Desligue e investigue rotor travado, curto-circuito ou falta de fase.' }
+    },
+    incl: {
+      nome: 'Inclinação', unidade: '°', casas: 1, junto: true,
+      titulo: { 1: 'Inclinação acima do normal', 2: 'Inclinação excessiva' },
+      acao: { 1: 'A base ou a placa pode ter se deslocado. Confira a fixação e o nivelamento.', 2: 'Pare a bancada e confira o nivelamento e a fixação da base.' }
+    }
+  };
+
+  // valor com unidade (graus ficam colados: 12,5°)
+  const vu = (k, v) => fmt(v, VARS[k].casas) + (VARS[k].junto ? '' : ' ') + VARS[k].unidade;
+
+  // ---------- estado ----------
+  const novaLeitura = () => ({
+    dispositivo: null, temp: null, tempStatus: null, corrente: null, potencia: null, offsetMv: null,
+    mpuOk: null, ax: null, ay: null, az: null, gx: null, gy: null, gz: null, mpuTemp: null,
+    incl: null, roll: null, pitch: null, zeroDefinido: null, in1: null, in2: null, p1: null, p2: null, f1: null, f2: null,
+    rpmPlaca: null, rssi: null, uptime: null, mqttPlaca: null, mqttBroker: null, lcdOk: null, lcdEnd: null
+  });
+  const est = {
+    cliente: null, conectado: false, encerrando: false, url: '', filtro: '', tentativaDesde: 0, avisouDemora: false,
+    modoAtual: null, origem: '',
+    leitura: novaLeitura(), recebidoEm: 0, msgs: 0, ultimoTopico: '', ultimoTexto: '',
+    dispositivos: new Map(), placaStatus: null,
+    niveis: { temp: null, corrente: null, incl: null },
+    desde: { temp: 0, corrente: 0, incl: 0 },
+    historico: [], eventos: [], pulsosAnt: null,
+    atual: null, janela: 120, tabela: false
+  };
+
+  // ---------- eventos (log) ----------
+  function registrarEvento(tipo, texto) {
+    est.eventos.unshift({ t: Date.now(), tipo, texto });
+    if (est.eventos.length > 120) est.eventos.length = 120;
+    desenharEventos();
+  }
+  function desenharEventos() {
+    const lista = $('listaEventos');
+    lista.replaceChildren();
+    if (!est.eventos.length) {
+      const p = document.createElement('p'); p.className = 'vazio'; p.textContent = 'Nenhum evento ainda.'; lista.appendChild(p); return;
+    }
+    const iconeTipo = { info: 'info', ok: 'ok', atencao: 1, critico: 2, erro: 2 };
+    for (const ev of est.eventos.slice(0, 60)) {
+      const linha = document.createElement('div'); linha.className = 'evento'; linha.dataset.tipo = ev.tipo;
+      const t = document.createElement('time'); t.textContent = hora(ev.t);
+      const ic = document.createElement('i'); ic.innerHTML = ICONES[iconeTipo[ev.tipo]] || ICONES.info;
+      const s = document.createElement('span'); s.textContent = ev.texto;
+      linha.append(t, ic, s); lista.appendChild(linha);
+    }
+  }
+
+  // ---------- formulário de conexão ----------
+  const campos = { modo: $('inModo'), ip: $('inIpPlaca'), preset: $('inPreset'), host: $('inHost'), porta: $('inPorta'), caminho: $('inCaminho'), tls: $('inTls'), topico: $('inTopico'), usuario: $('inUsuario'), senha: $('inSenha') };
+
+  function preencherFormulario() {
+    campos.modo.value = cfg.modo === 'mqtt' ? 'mqtt' : 'direto';
+    campos.ip.value = cfg.ipPlaca || '';
+    campos.preset.value = PRESETS[cfg.preset] || cfg.preset === 'custom' ? cfg.preset : 'custom';
+    campos.host.value = cfg.host; campos.porta.value = cfg.porta; campos.caminho.value = cfg.caminho;
+    campos.tls.value = cfg.tls ? 'wss' : 'ws'; campos.topico.value = cfg.topico; campos.usuario.value = cfg.usuario || '';
+    aplicarModo();
+  }
+  function aplicarModo() {
+    const direto = campos.modo.value === 'direto';
+    for (const el of document.querySelectorAll('[data-mqtt]')) el.hidden = direto;
+    for (const el of document.querySelectorAll('[data-direto]')) el.hidden = !direto;
+    atualizarInfoUrl();
+  }
+  // aceita "10.110.22.45", "http://10.110.22.45/" ou "kit-iot.local"
+  function normalizarIp(v) { return String(v || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, ''); }
+  function baseTopico(t = cfg.topico) { return String(t || '').trim().replace(/\/+#?$/, '').replace(/\/+$/, ''); }
+  function montarUrl(c = cfg) {
+    let caminho = (c.caminho || '').trim();
+    if (caminho && !caminho.startsWith('/')) caminho = '/' + caminho;
+    return `${c.tls ? 'wss' : 'ws'}://${c.host}:${c.porta}${caminho}`;
+  }
+  function lerFormulario() {
+    cfg.modo = campos.modo.value === 'mqtt' ? 'mqtt' : 'direto';
+    cfg.ipPlaca = normalizarIp(campos.ip.value);
+    campos.ip.value = cfg.ipPlaca;
+    let host = campos.host.value.trim();
+    // aceita um endereço completo colado no campo (ex.: ws://192.168.0.10:8083/mqtt)
+    const m = host.match(/^(wss?|mqtts?|https?):\/\/([^/:]+)(?::(\d+))?(\/.*)?$/i);
+    if (m) {
+      host = m[2];
+      if (/^(wss|https|mqtts)$/i.test(m[1])) campos.tls.value = 'wss'; else campos.tls.value = 'ws';
+      if (m[3]) campos.porta.value = m[3];
+      if (m[4]) campos.caminho.value = m[4];
+      campos.host.value = host;
+    }
+    cfg.preset = campos.preset.value;
+    cfg.host = host;
+    cfg.porta = parseInt(campos.porta.value, 10) || 0;
+    cfg.caminho = campos.caminho.value.trim();
+    cfg.tls = campos.tls.value === 'wss';
+    cfg.topico = baseTopico(campos.topico.value);
+    campos.topico.value = cfg.topico;
+    cfg.usuario = campos.usuario.value.trim();
+    salvarArmazenado('bancadaImbil.conexao', cfg);
+  }
+  function atualizarInfoUrl() {
+    if (campos.modo.value === 'direto') {
+      const ip = normalizarIp(campos.ip.value) || 'IP-DA-PLACA';
+      $('rotuloUrl').textContent = 'Leitura'; $('urlInfo').textContent = `http://${ip}/data`;
+      $('rotuloFiltro').textContent = 'Atualização'; $('filtroInfo').textContent = 'a cada 1 s';
+      return;
+    }
+    $('rotuloUrl').textContent = 'Endereço'; $('rotuloFiltro').textContent = 'Assinatura';
+    const c = {
+      host: campos.host.value.trim() || '…', porta: campos.porta.value || '…',
+      caminho: campos.caminho.value, tls: campos.tls.value === 'wss'
+    };
+    $('urlInfo').textContent = montarUrl(c);
+    $('filtroInfo').textContent = (baseTopico(campos.topico.value) || '…') + '/#';
+  }
+  campos.preset.addEventListener('change', () => {
+    const p = PRESETS[campos.preset.value];
+    if (p) {
+      campos.host.value = p.host; campos.porta.value = p.porta; campos.caminho.value = p.caminho; campos.tls.value = p.tls ? 'wss' : 'ws';
+    }
+    atualizarInfoUrl();
+  });
+  for (const k of ['host', 'porta', 'caminho', 'tls']) {
+    campos[k].addEventListener('input', () => {
+      const p = PRESETS[campos.preset.value];
+      if (p && (campos.host.value.trim() !== p.host || +campos.porta.value !== p.porta || campos.caminho.value !== p.caminho || (campos.tls.value === 'wss') !== p.tls)) {
+        campos.preset.value = 'custom';
+      }
+      atualizarInfoUrl();
+    });
+  }
+  campos.topico.addEventListener('input', atualizarInfoUrl);
+  campos.ip.addEventListener('input', atualizarInfoUrl);
+  campos.modo.addEventListener('change', aplicarModo);
+
+  function mensagemConexao(texto, tipo = 'info') {
+    const el = $('msgConexao'); el.textContent = texto; el.dataset.tipo = tipo;
+  }
+  function estadoBroker(estado, texto) {
+    const p = $('pilulaBroker');
+    p.dataset.estado = estado;
+    p.querySelector('span').textContent = texto;
+    $('btnConectar').textContent = (estado === 'ok' || estado === 'espera') ? 'Reconectar' : 'Conectar';
+    $('btnDesconectar').disabled = !(est.cliente || direto.ativo);
+    $('btnZerar').disabled = !(estado === 'ok');
+    $('btnZerarIncl').disabled = !(estado === 'ok');
+  }
+
+  // ---------- conexão ----------
+  function conectar() {
+    lerFormulario();
+    if (cfg.modo === 'direto') conectarDireto(); else conectarMqtt();
+  }
+
+  // modo direto: lê http://IP-DA-PLACA/data a cada 1 s (não precisa de broker)
+  const direto = { ativo: false, ip: '', timer: null, falhas: 0 };
+  function conectarDireto() {
+    const ip = cfg.ipPlaca;
+    if (!ip) { mensagemConexao('Digite o IP da placa. Ele aparece no Monitor Serial depois de "Wi-Fi OK" (ex.: 10.110.22.45).', 'erro'); campos.ip.focus(); return; }
+    if (location.protocol === 'https:') {
+      mensagemConexao('Esta página está em HTTPS e o navegador bloqueia http:// para a placa. Abra o arquivo HTML direto do computador ou acesse http://' + ip + '/ no navegador.', 'erro');
+      estadoBroker('erro', 'Bloqueado pelo navegador'); return;
+    }
+    const origemNova = `http://${ip}/data`;
+    const mudou = est.origem && est.origem !== origemNova;
+    desconectar(true);
+    if (mudou) limparDados('Origem dos dados alterada: leituras anteriores descartadas.');
+    direto.ativo = true; direto.ip = ip; direto.falhas = 0;
+    est.modoAtual = 'direto'; est.origem = origemNova; est.conectado = false;
+    estadoBroker('espera', 'Procurando a placa…');
+    mensagemConexao(`Lendo ${origemNova} a cada 1 s…`);
+    lerPlaca();
+  }
+  async function lerPlaca() {
+    if (!direto.ativo) return;
+    const ip = direto.ip, ctrl = new AbortController();
+    const limite = setTimeout(() => ctrl.abort(), 4000);
+    try {
+      const r = await fetch(`http://${ip}/data`, { cache: 'no-store', signal: ctrl.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const texto = (await r.text()).trim();
+      if (!direto.ativo || direto.ip !== ip) return;
+      const dado = JSON.parse(texto);
+      if (!est.conectado) registrarEvento('ok', `Placa respondendo em http://${ip}.`);
+      if (direto.falhas >= 3) mensagemConexao(`A placa voltou a responder em http://${ip}/data.`);
+      direto.falhas = 0; est.conectado = true;
+      estadoBroker('ok', 'Placa conectada (direto)');
+      est.msgs++;
+      receberObjeto(dado, `http://${ip}/data`, texto);
+    } catch (e) {
+      if (!direto.ativo || direto.ip !== ip) return;
+      direto.falhas++;
+      if (direto.falhas === 3) {
+        const estava = est.conectado;
+        est.conectado = false;
+        estadoBroker('erro', 'Placa não responde');
+        mensagemConexao(`A placa não respondeu em http://${ip}/data. Confira se o IP é o do Monitor Serial e se este computador ou celular está na mesma rede Wi-Fi da placa (rede de visitantes costuma bloquear). Teste abrindo http://${ip}/data numa aba.`, 'erro');
+        registrarEvento('erro', `Sem resposta da placa em http://${ip}.`);
+        if (estava || est.recebidoEm) mudarStatusPlaca('offline');
+      }
+    } finally {
+      clearTimeout(limite);
+      if (direto.ativo && direto.ip === ip) direto.timer = setTimeout(lerPlaca, 1000);
+    }
+  }
+
+  // ---------- MQTT ----------
+  function conectarMqtt() {
+    if (!cfg.host || !cfg.porta) { mensagemConexao('Informe o host e a porta do broker.', 'erro'); return; }
+    if (!cfg.topico) { mensagemConexao('Informe o tópico base da bancada (ex.: senai/imbil/bancada01).', 'erro'); return; }
+    if (typeof window.mqtt === 'undefined') {
+      mensagemConexao('A biblioteca MQTT.js não carregou. Verifique a internet deste computador e recarregue a página.', 'erro');
+      estadoBroker('erro', 'MQTT.js indisponível'); return;
+    }
+    if (location.protocol === 'https:' && !cfg.tls) {
+      mensagemConexao('Esta página está em HTTPS, então o navegador só aceita wss://. Escolha wss:// e a porta segura (EMQX 8084, HiveMQ 8884), ou abra o arquivo HTML direto do computador.', 'erro');
+      estadoBroker('erro', 'Protocolo bloqueado'); return;
+    }
+    const origemNova = `mqtt:${cfg.topico}/#`;
+    const mudou = est.origem && est.origem !== origemNova;
+    desconectar(true);
+    if (mudou) limparDados('Origem dos dados alterada: leituras anteriores descartadas.');
+    est.modoAtual = 'mqtt'; est.origem = origemNova;
+
+    const url = montarUrl();
+    const opcoes = {
+      clientId: 'painel-imbil-' + Math.random().toString(16).slice(2, 10),
+      clean: true, keepalive: 30, connectTimeout: 8000, reconnectPeriod: 4000, protocolVersion: 4
+    };
+    if (cfg.usuario) { opcoes.username = cfg.usuario; opcoes.password = campos.senha.value; }
+
+    let cli;
+    try { cli = window.mqtt.connect(url, opcoes); }
+    catch (e) { mensagemConexao('Endereço inválido: ' + (e && e.message ? e.message : e), 'erro'); estadoBroker('erro', 'Endereço inválido'); return; }
+
+    est.cliente = cli; est.url = url; est.filtro = cfg.topico + '/#';
+    est.encerrando = false; est.tentativaDesde = Date.now(); est.avisouDemora = false;
+    estadoBroker('espera', 'Conectando…');
+    mensagemConexao('Conectando em ' + url + '…');
+
+    cli.on('connect', () => {
+      if (est.cliente !== cli) return;
+      const primeira = !est.conectado;
+      est.conectado = true;
+      estadoBroker('ok', 'Broker conectado');
+      mensagemConexao('Conectado a ' + url + '. Aguardando a placa publicar em ' + cfg.topico + '/dados.');
+      cli.subscribe(est.filtro, { qos: 0 }, (err) => {
+        if (err) registrarEvento('erro', 'Não foi possível assinar ' + est.filtro + ': ' + err.message);
+      });
+      if (primeira) registrarEvento('ok', 'Conectado ao broker ' + cfg.host + ' (assinando ' + est.filtro + ').');
+    });
+    cli.on('reconnect', () => {
+      if (est.cliente !== cli) return;
+      estadoBroker('espera', 'Reconectando…');
+    });
+    cli.on('close', () => {
+      if (est.cliente !== cli || est.encerrando) return;
+      if (est.conectado) registrarEvento('erro', 'A conexão com o broker caiu. Tentando de novo a cada 4 s.');
+      est.conectado = false;
+      estadoBroker('erro', 'Sem conexão com o broker');
+    });
+    cli.on('error', (err) => {
+      if (est.cliente !== cli) return;
+      const msg = err && err.message ? err.message : String(err);
+      mensagemConexao('Erro do broker: ' + msg, 'erro');
+      registrarEvento('erro', 'Erro do broker: ' + msg);
+    });
+    cli.on('message', (topico, payload) => {
+      if (est.cliente !== cli) return;
+      aoMensagem(topico, payload);
+    });
+  }
+
+  function desconectar(silencioso = false) {
+    if (!est.cliente && !direto.ativo) return;
+    const eraDireto = direto.ativo;
+    direto.ativo = false; clearTimeout(direto.timer);
+    if (est.cliente) {
+      est.encerrando = true;
+      try { est.cliente.end(true); } catch { /* já fechado */ }
+      est.cliente = null;
+    }
+    est.conectado = false;
+    estadoBroker('off', 'Desconectado');
+    if (!silencioso) { mensagemConexao('Desconectado.'); registrarEvento('info', eraDireto ? 'Leitura direta da placa parada.' : 'Desconectado do broker.'); }
+  }
+
+  function enviarComando(cmd) {
+    if (direto.ativo) {
+      const rota = { reset_pulsos: '/reset', zerar_inclinacao: '/zerar' }[cmd];
+      if (!rota) return;
+      fetch(`http://${direto.ip}${rota}`, { cache: 'no-store' })
+        .then((r) => registrarEvento(r.ok ? 'info' : 'erro', r.ok ? 'Comando enviado à placa: ' + cmd + '.' : 'A placa recusou o comando ' + cmd + '.'))
+        .catch(() => registrarEvento('erro', 'Falha ao enviar o comando ' + cmd + '.'));
+      return;
+    }
+    if (!est.cliente || !est.conectado) return;
+    est.cliente.publish(cfg.topico + '/cmd', cmd, { qos: 0 }, (err) => {
+      registrarEvento(err ? 'erro' : 'info', err ? 'Falha ao enviar o comando ' + cmd + '.' : 'Comando enviado à placa: ' + cmd + '.');
+    });
+  }
+
+  // ---------- recepção e normalização ----------
+  const decodificador = new TextDecoder();
+  let agendado = null;
+
+  function aoMensagem(topico, payload) {
+    let texto;
+    try { texto = typeof payload === 'string' ? payload : decodificador.decode(payload); } catch { return; }
+    if (texto.length > 20000) return;                       // ignora mensagens gigantes
+    const base = cfg.topico;
+    if (topico === base + '/cmd') return;                   // nossos próprios comandos
+    est.msgs++;
+    if (topico === base + '/status') { mudarStatusPlaca(texto.trim().toLowerCase()); return; }
+
+    const t = texto.trim();
+    let dado = null;
+    if (t.startsWith('{')) {
+      try { dado = JSON.parse(t); } catch { return; }
+    } else if (t !== '' && Number.isFinite(+t.replace(',', '.'))) {
+      dado = { [topico.split('/').pop()]: +t.replace(',', '.') };   // tópico por sensor: .../temperatura = 28.5
+    } else return;
+    receberObjeto(dado, topico, t);
+  }
+
+  function receberObjeto(dado, origem, texto) {
+    if (!dado || typeof dado !== 'object') return;
+    est.ultimoTopico = origem; est.ultimoTexto = texto;
+    const primeiroDado = !est.recebidoEm;
+    mesclar(dado);
+    if (primeiroDado) {
+      mensagemConexao(`Recebendo dados${est.leitura.dispositivo ? ' de ' + est.leitura.dispositivo : ''} em ${origem}.`);
+      registrarEvento('ok', `Primeira leitura recebida em ${origem}.`);
+    }
+    est.recebidoEm = Date.now();
+    if (est.placaStatus !== 'online') mudarStatusPlaca('online');
+    if (!agendado) agendado = setTimeout(() => { agendado = null; processar(); }, 120);
+  }
+
+  function mudarStatusPlaca(s) {
+    const novo = /off|0|false|desl/.test(s) ? 'offline' : 'online';
+    if (novo === est.placaStatus) return;
+    est.placaStatus = novo;
+    const viaBroker = est.modoAtual !== 'direto';
+    registrarEvento(novo === 'online' ? 'ok' : 'erro', novo === 'online'
+      ? (viaBroker ? 'A placa está online no broker.' : 'A placa está respondendo.')
+      : (viaBroker ? 'A placa ficou offline (desconectou do broker).' : 'A placa parou de responder no IP.'));
+    atualizarRelogio();
+  }
+
+  function achatar(obj, prefixo = '', saida = {}) {
+    for (const [k, v] of Object.entries(obj)) {
+      const chave = (prefixo ? prefixo + '.' + k : k).toLowerCase();
+      if (v && typeof v === 'object' && !Array.isArray(v)) achatar(v, chave, saida);
+      else saida[chave] = v;
+    }
+    return saida;
+  }
+  const comoNum = (v) => {
+    if (ehNum(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(+v.replace(',', '.'))) return +v.replace(',', '.');
+    return null;
+  };
+  // devolve undefined se o campo não veio; null se veio sem valor válido
+  function pegar(p, caminhos, nomes = [], excluir = null) {
+    for (const c of caminhos) if (c in p) return comoNum(p[c]);
+    for (const [k, v] of Object.entries(p)) {
+      const folha = k.split('.').pop();
+      if (nomes.includes(folha) && !(excluir && excluir.test(k))) return comoNum(v);
+    }
+    return undefined;
+  }
+
+  function mesclar(dado) {
+    const p = achatar(dado);
+    const L = est.leitura;
+    const usar = (campo, v) => { if (v !== undefined) L[campo] = v; };
+    usar('temp', pegar(p, ['termopar.temp_c'], ['temp_c', 'temperatura', 'temperature', 'temp', 'termopar', 'max6675', 'temp_motor', 'temperatura_c'], /mpu|imu|chip/));
+    usar('corrente', pegar(p, ['corrente.irms_a'], ['irms_a', 'corrente', 'current', 'irms', 'corrente_a', 'amperes']));
+    usar('potencia', pegar(p, ['corrente.potencia_w'], ['potencia_w', 'potencia', 'power', 'watts']));
+    usar('offsetMv', pegar(p, ['corrente.offset_mv'], ['offset_mv']));
+    usar('ax', pegar(p, ['mpu6050.ax_g'], ['ax_g', 'ax', 'accx', 'acc_x', 'accel_x']));
+    usar('ay', pegar(p, ['mpu6050.ay_g'], ['ay_g', 'ay', 'accy', 'acc_y', 'accel_y']));
+    usar('az', pegar(p, ['mpu6050.az_g'], ['az_g', 'az', 'accz', 'acc_z', 'accel_z']));
+    usar('gx', pegar(p, ['mpu6050.gx_dps'], ['gx_dps', 'gx', 'gyrox', 'gyro_x']));
+    usar('gy', pegar(p, ['mpu6050.gy_dps'], ['gy_dps', 'gy', 'gyroy', 'gyro_y']));
+    usar('gz', pegar(p, ['mpu6050.gz_dps'], ['gz_dps', 'gz', 'gyroz', 'gyro_z']));
+    usar('mpuTemp', pegar(p, ['mpu6050.temp_c'], []));
+    usar('incl', pegar(p, ['mpu6050.inclinacao_graus'], ['inclinacao_graus', 'inclinacao', 'tilt', 'angulo']));
+    usar('roll', pegar(p, ['mpu6050.roll_graus'], ['roll_graus', 'roll']));
+    usar('pitch', pegar(p, ['mpu6050.pitch_graus'], ['pitch_graus', 'pitch']));
+    if ('mpu6050.zero_definido' in p) L.zeroDefinido = !!p['mpu6050.zero_definido'];
+    usar('in1', pegar(p, ['entradas.in1'], ['in1', 'enc_a']));
+    usar('in2', pegar(p, ['entradas.in2'], ['in2', 'enc_b']));
+    usar('p1', pegar(p, ['entradas.pulsos1'], ['pulsos1', 'pulsos_a']));
+    usar('p2', pegar(p, ['entradas.pulsos2'], ['pulsos2', 'pulsos_b']));
+    usar('f1', pegar(p, ['entradas.freq1_hz'], ['freq1_hz', 'freq_a_hz']));
+    usar('f2', pegar(p, ['entradas.freq2_hz'], ['freq2_hz', 'freq_b_hz']));
+    usar('rpmPlaca', pegar(p, ['entradas.rpm'], ['rpm', 'rotacao']));
+    usar('rssi', pegar(p, ['wifi_rssi'], ['rssi', 'wifi_rssi']));
+    usar('uptime', pegar(p, ['uptime_ms'], ['uptime_ms']));
+
+    if ('lcd.ok' in p) L.lcdOk = !!p['lcd.ok'];
+    if (typeof p['lcd.endereco'] === 'string') L.lcdEnd = p['lcd.endereco'].slice(0, 8);
+    if ('mqtt.conectado' in p) L.mqttPlaca = !!p['mqtt.conectado'];
+    if (typeof p['mqtt.broker'] === 'string') L.mqttBroker = p['mqtt.broker'].slice(0, 80);
+    if ('termopar.status' in p) L.tempStatus = String(p['termopar.status']).slice(0, 40);
+    else if ('termopar.ok' in p) L.tempStatus = p['termopar.ok'] ? 'ok' : 'falha';
+    else if (L.temp !== null) L.tempStatus = 'ok';
+
+    if ('mpu6050.ok' in p) L.mpuOk = !!p['mpu6050.ok'];
+    else if (ehNum(L.ax)) L.mpuOk = true;
+    if (L.mpuOk === false) {
+      for (const k of ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'mpuTemp', 'incl', 'roll', 'pitch']) L[k] = null;
+    }
+
+    const disp = p['dispositivo'] ?? p['device'] ?? p['client_id'];
+    if (typeof disp === 'string' && disp) {
+      L.dispositivo = disp.slice(0, 64);
+      est.dispositivos.set(L.dispositivo, Date.now());
+    }
+  }
+
+  // ---------- níveis, saúde e histórico ----------
+  function nivelCom(valor, lim, anterior) {
+    if (!ehNum(valor)) return null;
+    const h = 0.03;                                         // histerese de 3% para não piscar
+    if (valor >= lim.crit || (anterior === 2 && valor >= lim.crit * (1 - h))) return 2;
+    if (valor >= lim.warn || (anterior >= 1 && valor >= lim.warn * (1 - h))) return 1;
+    return 0;
+  }
+  function saudeVar(v, l) {
+    if (!ehNum(v)) return null;
+    const w = l.warn, c = l.crit;
+    if (v <= 0.7 * w) return 100;
+    if (v <= w) return lerp(100, 70, (v - 0.7 * w) / (0.3 * w));
+    if (v <= c) return lerp(70, 30, (v - w) / (c - w));
+    return lerp(30, 0, (v - c) / (0.25 * c));
+  }
+  const nivelSaude = (s) => !ehNum(s) ? null : s >= 70 ? 0 : s >= 40 ? 1 : 2;
+  const idadeDados = () => est.recebidoEm ? (Date.now() - est.recebidoEm) / 1000 : Infinity;
+  const dadosVencidos = () => idadeDados() > 15 || est.placaStatus === 'offline';
+
+  function calcularSaude() {
+    const a = est.atual;
+    if (!a) return null;
+    const pesos = { temp: 0.35, corrente: 0.35, incl: 0.30 };
+    const comp = {};
+    let soma = 0, somaP = 0, pior = 100;
+    for (const k of Object.keys(pesos)) {
+      const s = saudeVar(a.valores[k], limites[k]);
+      comp[k] = s;
+      if (s !== null) { soma += s * pesos[k]; somaP += pesos[k]; pior = Math.min(pior, s); }
+    }
+    const motor = somaP ? Math.min(soma / somaP, pior + 10) : null;
+    const online = [a.valores.temp, a.valores.corrente, a.valores.incl].filter(ehNum).length;
+    const idade = idadeDados();
+    const comunicacao = est.placaStatus === 'offline' ? 0 : idade <= 3 ? 100 : idade >= 30 ? 0 : lerp(100, 0, (idade - 3) / 27);
+    const disponibilidade = online / 3 * 100;
+    const bancada = motor === null ? null : 0.6 * motor + 0.25 * disponibilidade + 0.15 * comunicacao;
+    return { motor, bancada, comp, online, comunicacao, disponibilidade };
+  }
+
+  function nivelMotor() {
+    const ns = Object.values(est.niveis).filter((n) => n !== null);
+    return ns.length ? Math.max(...ns) : null;
+  }
+
+  function processar() {
+    const L = est.leitura, agora = Date.now();
+
+    // inclinação: ângulo enviado pela placa (em relação ao zero); sem ele, calcula pela aceleração (em relação à horizontal)
+    let incl = L.incl, roll = L.roll, pitch = L.pitch;
+    if (!ehNum(incl) && ehNum(L.ax) && ehNum(L.ay) && ehNum(L.az)) {
+      const g = Math.hypot(L.ax, L.ay, L.az);
+      if (g > 0.2) {
+        incl = Math.acos(clamp(L.az / g, -1, 1)) * 180 / Math.PI;
+        roll = Math.atan2(L.ay, L.az) * 180 / Math.PI;
+        pitch = Math.atan2(-L.ax, Math.hypot(L.ay, L.az)) * 180 / Math.PI;
+      }
+    }
+
+    // rotação: frequência do encoder × 60 ÷ pulsos por volta
+    let rpm = null;
+    if (ehNum(L.f1)) rpm = L.f1 * 60 / limites.ppr;
+    else if (ehNum(L.rpmPlaca)) rpm = L.rpmPlaca;
+    else if (ehNum(L.p1) && ehNum(L.uptime)) {
+      const ant = est.pulsosAnt;
+      if (ant && L.uptime > ant.uptime && L.p1 >= ant.p) rpm = (L.p1 - ant.p) / ((L.uptime - ant.uptime) / 1000) * 60 / limites.ppr;
+      est.pulsosAnt = { p: L.p1, uptime: L.uptime };
+    }
+
+    const valores = { temp: L.temp, corrente: L.corrente, incl };
+    for (const k of ['temp', 'corrente', 'incl']) {
+      const antes = est.niveis[k];
+      const n = nivelCom(valores[k], limites[k], antes);
+      if (n !== antes) {
+        est.desde[k] = agora;
+        if (antes !== null || (n !== null && n > 0)) {
+          const v = VARS[k];
+          if (n === null) registrarEvento('info', `${v.nome}: sensor sem leitura.`);
+          else if (n === 0 && antes > 0) registrarEvento('ok', `${v.nome} voltou ao normal (${vu(k, valores[k])}).`);
+          else if (n > 0) registrarEvento(n === 2 ? 'critico' : 'atencao', `${v.titulo[n]}: ${vu(k, valores[k])} (limite ${vu(k, n === 2 ? limites[k].crit : limites[k].warn)}).`);
+        }
+      }
+      est.niveis[k] = n;
+    }
+
+    const operando = (ehNum(L.corrente) && L.corrente >= 0.5) || (ehNum(rpm) && rpm >= 30);
+    est.atual = { valores, rpm, roll, pitch, operando };
+
+    est.historico.push({ t: agora, temp: L.temp, corrente: L.corrente, potencia: L.potencia, incl, rpm,
+      nT: est.niveis.temp, nC: est.niveis.corrente, nI: est.niveis.incl });
+    if (est.historico.length > 5000) est.historico.splice(0, est.historico.length - 5000);
+
+    desenharLeituras();
+    desenharDetalhes();
+    atualizarRelogio();
+    if (est.tabela) desenharTabela();
+    agendarGraficos();
+    if ($('detJson').open) desenharJson();
+  }
+
+  function limparDados(motivo) {
+    est.leitura = novaLeitura(); est.recebidoEm = 0; est.historico = []; est.pulsosAnt = null;
+    est.niveis = { temp: null, corrente: null, incl: null }; est.atual = null; est.placaStatus = null; est.dispositivos.clear();
+    if (motivo) registrarEvento('info', motivo);
+    desenharLeituras(); desenharDetalhes(); atualizarRelogio(); agendarGraficos();
+  }
+
+  // ---------- desenho: leituras ----------
+  const kpi = (v) => document.querySelector(`.kpi[data-var="${v}"]`);
+
+  function medidor(el, valor, lim, nivel) {
+    if (!el.dataset.pronto) {
+      el.innerHTML = '<div class="m-zona atencao"></div><div class="m-zona critico"></div><div class="m-valor"></div>' +
+        '<i class="m-marca w"></i><i class="m-marca c"></i><span class="m-rotulo w"></span><span class="m-rotulo c"></span>';
+      el.dataset.pronto = '1';
+    }
+    const max = lim.crit * 1.25;
+    const pct = (v) => clamp(v / max * 100, 0, 100);
+    const za = el.querySelector('.m-zona.atencao'), zc = el.querySelector('.m-zona.critico');
+    za.style.left = pct(lim.warn) + '%'; za.style.width = (pct(lim.crit) - pct(lim.warn)) + '%';
+    zc.style.left = pct(lim.crit) + '%'; zc.style.width = (100 - pct(lim.crit)) + '%';
+    el.querySelector('.m-marca.w').style.left = pct(lim.warn) + '%';
+    el.querySelector('.m-marca.c').style.left = pct(lim.crit) + '%';
+    const rw = el.querySelector('.m-rotulo.w'), rc = el.querySelector('.m-rotulo.c');
+    rw.style.left = pct(lim.warn) + '%'; rc.style.left = pct(lim.crit) + '%';
+    const casas = lim.crit < 1 ? 2 : 0;
+    rw.textContent = fmt(lim.warn, casas); rc.textContent = fmt(lim.crit, casas);
+    const barra = el.querySelector('.m-valor');
+    barra.style.width = ehNum(valor) ? Math.max(pct(valor), 1.5) + '%' : '0%';
+    barra.dataset.nivel = nivel === null ? 'sem' : nivel;
+  }
+
+  function desenharLeituras() {
+    const L = est.leitura, a = est.atual;
+    const antigo = dadosVencidos();
+
+    // temperatura
+    {
+      const el = kpi('temp'), n = antigo ? null : est.niveis.temp;
+      el.querySelector('[data-valor]').textContent = fmt(L.temp, 1);
+      chip(el.querySelector('[data-chip]'), ehNum(L.temp) ? n : null);
+      medidor(el.querySelector('[data-medidor]'), L.temp, limites.temp, n);
+      const st = L.tempStatus;
+      el.querySelector('[data-extra]').textContent =
+        st === 'termopar_aberto' ? 'Termopar desconectado: confira os bornes + e − do MAX6675.' :
+        st === 'sem_comunicacao' ? 'MAX6675 sem comunicação: confira os pinos SO, CS e SCK.' :
+        ehNum(L.temp) ? `Atenção a partir de ${fmt(limites.temp.warn, 0)} °C, crítico a partir de ${fmt(limites.temp.crit, 0)} °C.` : 'Aguardando leitura.';
+    }
+    // corrente
+    {
+      const el = kpi('corrente'), n = antigo ? null : est.niveis.corrente;
+      el.querySelector('[data-valor]').textContent = fmt(L.corrente, 2);
+      chip(el.querySelector('[data-chip]'), ehNum(L.corrente) ? n : null);
+      medidor(el.querySelector('[data-medidor]'), L.corrente, limites.corrente, n);
+      el.querySelector('[data-extra]').textContent = ehNum(L.corrente)
+        ? (ehNum(L.potencia) ? `Potência estimada: ${fmt(L.potencia, 0)} W.` : 'Corrente RMS medida no cabo do motor.')
+        : 'Aguardando leitura.';
+    }
+    // inclinação
+    {
+      const el = kpi('incl'), v = a ? a.valores.incl : null, n = antigo ? null : est.niveis.incl;
+      el.querySelector('[data-valor]').textContent = ehNum(v) ? fmt(v, 1) + '°' : '—';
+      chip(el.querySelector('[data-chip]'), ehNum(v) ? n : null);
+      medidor(el.querySelector('[data-medidor]'), v, limites.incl, n);
+      el.querySelector('[data-extra]').textContent =
+        L.mpuOk === false ? 'MPU6050 não detectado: sem medição de inclinação.' :
+        !ehNum(v) ? 'Aguardando leitura.' :
+        `Roll ${fmt(a.roll, 1)}°, pitch ${fmt(a.pitch, 1)}°. ` + (L.zeroDefinido ? 'Em relação ao zero definido.' : 'Em relação à horizontal.');
+    }
+    // rotação
+    {
+      const el = kpi('rpm'), r = a ? a.rpm : null;
+      el.querySelector('[data-valor]').textContent = fmt(r, 0);
+      chip(el.querySelector('[data-chip]'), ehNum(r) && !antigo ? 'info' : null, ROTULO_NIVEL,
+        ehNum(r) && !antigo ? (a.operando ? 'Em operação' : 'Parado') : undefined);
+      const barra = el.querySelector('[data-medidor-rpm] .m-valor');
+      barra.style.width = ehNum(r) ? clamp(r / 3600 * 100, 0, 100) + '%' : '0%';
+      barra.dataset.nivel = ehNum(r) ? '0' : 'sem';
+      barra.style.background = ehNum(r) ? 'var(--ciano)' : '';
+      el.querySelector('[data-extra]').textContent = ehNum(r)
+        ? `${fmt(ehNum(L.f1) ? L.f1 : r * limites.ppr / 60, 1)} Hz no encoder, ${limites.ppr} pulso${limites.ppr > 1 ? 's' : ''} por volta.`
+        : 'Aguardando leitura.';
+    }
+  }
+
+  // ---------- desenho: estado geral, saúde, alertas ----------
+  const TITULO_ESTADO = { 0: 'Operação normal', 1: 'Atenção', 2: 'Crítico', sem: 'Aguardando dados' };
+
+  function avisosSistema() {
+    const L = est.leitura, lista = [];
+    const idade = idadeDados();
+    if (!est.recebidoEm) return lista;
+    const viaBroker = est.modoAtual !== 'direto';
+    if (est.placaStatus === 'offline') lista.push({ nivel: 2, titulo: 'Placa offline', texto: viaBroker ? 'A placa desconectou do broker. Confira a alimentação e o Wi-Fi da placa.' : 'A placa parou de responder no IP. Confira a alimentação, o Wi-Fi e se o IP mudou.' });
+    else if (idade > 10) lista.push({ nivel: 1, titulo: `Sem dados há ${Math.round(idade)} s`, texto: viaBroker ? 'A placa parou de publicar. Confira a alimentação, o Wi-Fi e o broker configurado no firmware.' : 'A placa parou de responder. Confira a alimentação e o Wi-Fi da placa.' });
+    if (L.mpuOk === false) lista.push({ nivel: 'sem', titulo: 'MPU6050 não detectado', texto: 'Sem medição de inclinação. Confira a solda e a alimentação do módulo.' });
+    if (L.tempStatus === 'termopar_aberto') lista.push({ nivel: 'sem', titulo: 'Termopar desconectado', texto: 'Confira os bornes + e − do MAX6675.' });
+    else if (L.tempStatus === 'sem_comunicacao') lista.push({ nivel: 'sem', titulo: 'MAX6675 sem comunicação', texto: 'Confira os pinos SO, CS e SCK.' });
+    const recentes = [...est.dispositivos.entries()].filter(([, t]) => Date.now() - t < 30000).map(([d]) => d);
+    if (recentes.length > 1) lista.push({ nivel: 1, titulo: 'Mais de uma placa neste tópico', texto: `Recebendo de ${recentes.join(', ')}. Troque o BANCADA_ID no firmware de uma delas.` });
+    return lista;
+  }
+
+  function desenharEstadoEAlertas() {
+    const antigo = dadosVencidos();
+    const nm = antigo ? null : nivelMotor();
+    const ativos = [];
+    if (!antigo) {
+      for (const k of ['temp', 'corrente', 'incl']) {
+        const n = est.niveis[k];
+        if (n >= 1) {
+          const v = VARS[k], val = est.atual.valores[k];
+          ativos.push({ nivel: n, titulo: v.titulo[n],
+            texto: `${vu(k, val)} (limite ${vu(k, n === 2 ? limites[k].crit : limites[k].warn)}) desde ${hora(est.desde[k])}. ${v.acao[n]}` });
+        }
+      }
+    }
+    ativos.sort((x, y) => y.nivel - x.nivel);
+    const sistema = avisosSistema();
+
+    // estado geral
+    const box = $('estadoGeral');
+    const temDados = !!est.recebidoEm;
+    const offline = est.placaStatus === 'offline';
+    const nGeral = !temDados ? 'sem' : offline ? 2 : antigo ? 1 : (nm === null ? 'sem' : nm);
+    const semLeitura = est.atual ? ['temp', 'corrente', 'incl'].filter((k) => !ehNum(est.atual.valores[k])).map((k) => VARS[k].nome.toLowerCase()) : [];
+    box.dataset.nivel = nGeral;
+    $('estadoIcone').innerHTML = ICONES[nGeral] || ICONES.sem;
+    $('estadoTitulo').textContent = !temDados ? TITULO_ESTADO.sem : offline ? 'Placa offline' : antigo ? 'Dados desatualizados' : TITULO_ESTADO[nGeral];
+    $('estadoTexto').textContent = !temDados
+      ? (est.conectado ? (est.modoAtual === 'direto' ? 'Placa encontrada. Aguardando a primeira leitura.' : `Conectado. Aguardando a placa publicar em ${cfg.topico}/dados.`)
+         : 'Digite o IP da placa (ou os dados do broker) e clique em Conectar.')
+      : offline ? `A placa ${est.modoAtual === 'direto' ? 'parou de responder' : 'desconectou do broker'}. Última leitura há ${Math.round(idadeDados())} s.`
+      : antigo ? `Última leitura há ${Math.round(idadeDados())} s.`
+      : ativos.length ? `${ativos.length} alerta${ativos.length > 1 ? 's' : ''} de operação ativo${ativos.length > 1 ? 's' : ''}.`
+      : semLeitura.length ? `Leituras dentro dos limites, mas sem dados de ${semLeitura.join(' e ')}.`
+      : 'Todas as leituras dentro dos limites.';
+
+    // lista de alertas
+    const lista = $('listaAlertas');
+    lista.replaceChildren();
+    const todos = [...ativos, ...sistema];
+    $('alertasResumo').textContent = todos.length ? `${ativos.length} de operação, ${sistema.length} do sistema.` : 'Operação e sistema';
+    if (!todos.length) {
+      const p = document.createElement('p'); p.className = 'vazio';
+      p.textContent = temDados ? 'Nenhum alerta ativo. As leituras estão dentro dos limites.' : 'Os alertas aparecem aqui quando alguma leitura passar dos limites.';
+      lista.appendChild(p);
+    }
+    for (const al of todos) {
+      const d = document.createElement('div'); d.className = 'alerta'; d.dataset.nivel = al.nivel;
+      const ic = document.createElement('i'); ic.innerHTML = ICONES[al.nivel] || ICONES.sem;
+      const t = document.createElement('div'); t.className = 'alerta-titulo'; t.textContent = al.titulo;
+      const x = document.createElement('div'); x.className = 'alerta-texto'; x.textContent = al.texto;
+      d.append(ic, t, x); lista.appendChild(d);
+    }
+  }
+
+  function prepararGauge(id) {
+    const g = $(id).querySelector('.g-marcas');
+    if (g.childElementCount) return;
+    for (const p of [40, 70]) {                              // divisões entre crítica / atenção / boa
+      const th = Math.PI * (1 - p / 100);
+      const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      l.setAttribute('class', 'g-marca');
+      l.setAttribute('x1', 100 + 71 * Math.cos(th)); l.setAttribute('y1', 100 - 71 * Math.sin(th));
+      l.setAttribute('x2', 100 + 89 * Math.cos(th)); l.setAttribute('y2', 100 - 89 * Math.sin(th));
+      g.appendChild(l);
+    }
+  }
+  function desenharGauge(id, valor, antigo) {
+    const g = $(id);
+    const n = nivelSaude(valor);
+    g.dataset.nivel = n === null ? 'sem' : n;
+    g.classList.toggle('antigo', !!antigo && valor !== null);
+    g.querySelector('.g-valor').style.strokeDasharray = ehNum(valor) ? `${clamp(valor, 0.5, 100)} 100` : '0 100';
+    g.querySelector('.g-num').textContent = ehNum(valor) ? Math.round(valor) + '%' : '—';
+    chip(g.querySelector('.g-status'), n, ROTULO_SAUDE);
+  }
+  function linhaComp(nome, valorTxt, pct) {
+    const d = document.createElement('div'); d.className = 'comp-linha';
+    const a = document.createElement('span'); a.textContent = nome;
+    const b = document.createElement('b'); b.textContent = valorTxt;
+    const barra = document.createElement('div'); barra.className = 'comp-barra';
+    const i = document.createElement('i');
+    i.style.width = ehNum(pct) ? clamp(pct, 0, 100) + '%' : '0%';
+    const n = nivelSaude(pct); i.dataset.nivel = n === null ? 'sem' : n;
+    barra.appendChild(i); d.append(a, b, barra);
+    return d;
+  }
+  function desenharSaude() {
+    const s = calcularSaude();
+    const antigo = dadosVencidos();
+    desenharGauge('gaugeBancada', s ? s.bancada : null, antigo);
+    desenharGauge('gaugeMotor', s ? s.motor : null, antigo);
+    const pct = (v) => ehNum(v) ? Math.round(v) + '%' : '—';
+    $('compMotor').replaceChildren(
+      linhaComp('Temperatura', pct(s && s.comp.temp), s && s.comp.temp),
+      linhaComp('Corrente', pct(s && s.comp.corrente), s && s.comp.corrente),
+      linhaComp('Inclinação', pct(s && s.comp.incl), s && s.comp.incl));
+    $('compBancada').replaceChildren(
+      linhaComp('Motor', pct(s && s.motor), s && s.motor),
+      linhaComp('Sensores ativos', s ? `${s.online} de 3` : '—', s ? s.disponibilidade : null),
+      linhaComp('Comunicação', pct(s && s.comunicacao), s && s.comunicacao));
+  }
+
+  // ---------- desenho: detalhes ----------
+  function desenharDetalhes() {
+    const L = est.leitura;
+    chip($('chipMpu'), L.mpuOk === null ? null : L.mpuOk ? 0 : 'sem', ROTULO_NIVEL, L.mpuOk === null ? undefined : L.mpuOk ? 'Detectado' : 'Não detectado');
+    $('vAx').textContent = fmt(L.ax, 2); $('vAy').textContent = fmt(L.ay, 2); $('vAz').textContent = fmt(L.az, 2);
+    $('vGx').textContent = fmt(L.gx, 1); $('vGy').textContent = fmt(L.gy, 1); $('vGz').textContent = fmt(L.gz, 1);
+    const at = est.atual;
+    $('vIncl').textContent = at && ehNum(at.roll) && ehNum(at.pitch) ? `${fmt(at.roll, 1)}° / ${fmt(at.pitch, 1)}°` : '—';
+    $('vRef').textContent = L.mpuOk === false || L.zeroDefinido === null ? '—' : L.zeroDefinido ? 'definido na bancada' : 'horizontal';
+    $('vMpuT').textContent = ehNum(L.mpuTemp) ? `${fmt(L.mpuTemp, 1)} °C` : '—';
+
+    $('led1').classList.toggle('on', L.in1 === 1); $('led2').classList.toggle('on', L.in2 === 1);
+    $('vP1').textContent = ehNum(L.p1) ? L.p1.toLocaleString('pt-BR') : '0';
+    $('vP2').textContent = ehNum(L.p2) ? L.p2.toLocaleString('pt-BR') : '0';
+    $('vF1').textContent = ehNum(L.f1) ? `${fmt(L.f1, 1)} Hz` : '—';
+    $('vF2').textContent = ehNum(L.f2) ? `${fmt(L.f2, 1)} Hz` : '—';
+    $('vDisp').textContent = L.dispositivo || '—';
+    if (ehNum(L.rssi) && L.rssi < 0) {
+      const q = L.rssi >= -60 ? 'bom' : L.rssi >= -72 ? 'regular' : 'fraco';
+      $('vRssi').textContent = `${L.rssi} dBm (${q})`;
+    } else $('vRssi').textContent = '—';
+    if (ehNum(L.uptime)) {
+      const s = Math.floor(L.uptime / 1000);
+      $('vUptime').textContent = `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min ${s % 60} s`;
+    } else $('vUptime').textContent = '—';
+    $('vMsgs').textContent = est.msgs.toLocaleString('pt-BR');
+    $('vLcd').textContent = L.lcdOk === null ? '—' : L.lcdOk ? `encontrado${L.lcdEnd ? ' (' + L.lcdEnd + ')' : ''}` : 'não encontrado';
+    $('vMqtt').textContent = L.mqttPlaca === null ? '—'
+      : L.mqttPlaca ? `conectado${L.mqttBroker ? ' (' + L.mqttBroker + ')' : ''}`
+      : `sem broker${L.mqttBroker ? ' (' + L.mqttBroker + ')' : ''}`;
+  }
+
+  function desenharJson() {
+    $('topicoJson').textContent = est.ultimoTopico;
+    let txt = est.ultimoTexto || 'Nenhuma mensagem ainda.';
+    try { if (txt.startsWith('{')) txt = JSON.stringify(JSON.parse(txt), null, 2); } catch { /* mantém o texto */ }
+    $('rawJson').textContent = txt;
+  }
+
+  // ---------- relógio (1 s): idade dos dados, saúde e 3D ----------
+  function atualizarRelogio() {
+    const idade = idadeDados();
+    const pil = $('pilulaPlaca');
+    if (!est.recebidoEm) { pil.dataset.estado = 'off'; pil.querySelector('span').textContent = 'Placa: aguardando dados'; $('vIdade').textContent = '—'; }
+    else if (est.placaStatus === 'offline') { pil.dataset.estado = 'erro'; pil.querySelector('span').textContent = 'Placa offline'; }
+    else if (idade > 10) { pil.dataset.estado = 'espera'; pil.querySelector('span').textContent = `Placa sem dados há ${Math.round(idade)} s`; }
+    else { pil.dataset.estado = 'ok'; pil.querySelector('span').textContent = 'Placa online'; }
+    if (est.recebidoEm) $('vIdade').textContent = idade < 2 ? 'agora' : `há ${Math.round(idade)} s`;
+
+    if (est.cliente && !est.conectado && !est.avisouDemora && Date.now() - est.tentativaDesde > 10000) {
+      est.avisouDemora = true;
+      mensagemConexao(`O broker não respondeu em ${est.url}. Confira host, porta, caminho e protocolo (EMQX: 8083 ws / 8084 wss; HiveMQ: 8000 ws / 8884 wss) e se a rede libera essa porta.`, 'erro');
+      registrarEvento('erro', `Sem resposta do broker em ${est.url}.`);
+    }
+
+    if (dadosVencidos() && est.recebidoEm) desenharLeituras();
+    desenharSaude();
+    desenharEstadoEAlertas();
+  }
+
+  // ---------- gráficos (Chart.js) ----------
+  const graficos = {};
+  let graficoAgendado = null;
+
+  const pluginLimites = {
+    id: 'limites',
+    afterDatasetsDraw(chart, _args, opts) {
+      const { ctx, chartArea: a, scales: { y } } = chart;
+      if (!y || !opts || !ehNum(opts.warn)) return;
+      ctx.save();
+      for (const [valor, cor, rotulo] of [[opts.warn, '#fbbf24', 'Atenção'], [opts.crit, '#fb4f6b', 'Crítico']]) {
+        if (!ehNum(valor) || valor < y.min || valor > y.max) continue;
+        const py = Math.round(y.getPixelForValue(valor)) + 0.5;
+        ctx.strokeStyle = cor; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#a3b6d1'; ctx.font = '500 11px "IBM Plex Sans", system-ui, sans-serif';
+        ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+        ctx.fillText(`${rotulo} ${fmt(valor, opts.casas)}`, a.right - 4, py - 3);
+      }
+      ctx.restore();
+    }
+  };
+  const pluginMira = {
+    id: 'mira',
+    afterDraw(chart) {
+      const ativos = chart.tooltip && chart.tooltip.getActiveElements ? chart.tooltip.getActiveElements() : [];
+      if (!ativos.length) return;
+      const x = Math.round(ativos[0].element.x) + 0.5, { ctx, chartArea: a } = chart;
+      ctx.save(); ctx.strokeStyle = 'rgba(163,182,209,.4)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, a.top); ctx.lineTo(x, a.bottom); ctx.stroke(); ctx.restore();
+    }
+  };
+
+  function criarGraficos() {
+    if (typeof window.Chart === 'undefined') {
+      const area = $('areaGraficos');
+      area.replaceChildren();
+      const p = document.createElement('p'); p.className = 'vazio';
+      p.textContent = 'Os gráficos não carregaram (Chart.js indisponível). Verifique a internet deste computador e recarregue a página.';
+      area.appendChild(p);
+      return;
+    }
+    const C = window.Chart;
+    C.defaults.color = '#6f86a8';
+    C.defaults.font.family = '"IBM Plex Sans", system-ui, sans-serif';
+    C.defaults.font.size = 11;
+    const def = [
+      ['temp', 'gTemp', '°C', 1],
+      ['corrente', 'gCorrente', 'A', 2],
+      ['incl', 'gIncl', '°', 1]
+    ];
+    for (const [chave, id, unidade, casas] of def) {
+      const ctx = $(id).getContext('2d');
+      const grad = ctx.createLinearGradient(0, 0, 0, 200);
+      grad.addColorStop(0, 'rgba(34,211,238,.20)'); grad.addColorStop(1, 'rgba(34,211,238,0)');
+      graficos[chave] = new C(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [{
+          data: [], borderColor: '#22d3ee', backgroundColor: grad, fill: true, borderWidth: 2,
+          pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: '#22d3ee', pointHoverBorderColor: '#0a172b', pointHoverBorderWidth: 2,
+          tension: 0.25, spanGaps: false, borderJoinStyle: 'round', borderCapStyle: 'round'
+        }] },
+        options: {
+          animation: false, responsive: true, maintainAspectRatio: false, normalized: true,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 6, right: 4 } },
+          plugins: {
+            legend: { display: false },
+            limites: { warn: limites[chave].warn, crit: limites[chave].crit, casas },
+            tooltip: {
+              backgroundColor: '#0a172b', borderColor: '#27436f', borderWidth: 1, padding: 10, displayColors: false,
+              titleColor: '#a3b6d1', bodyColor: '#e3edf9', bodyFont: { weight: '600', size: 13 }, titleFont: { weight: '500', size: 11 },
+              callbacks: { label: (c) => `${fmt(c.parsed.y, casas)}${unidade === '°' ? '' : ' '}${unidade}` }
+            }
+          },
+          scales: {
+            x: { grid: { display: false }, border: { color: '#1b3053' }, ticks: { maxTicksLimit: 4, maxRotation: 0, autoSkip: true } },
+            y: { suggestedMin: 0, suggestedMax: limites[chave].crit * 1.1, grid: { color: '#13253f' }, border: { display: false },
+                 ticks: { maxTicksLimit: 5, callback: (v) => fmt(v, 0) } }
+          }
+        },
+        plugins: [pluginLimites, pluginMira]
+      });
+    }
+  }
+
+  function agendarGraficos() {
+    if (graficoAgendado) return;
+    graficoAgendado = setTimeout(() => { graficoAgendado = null; desenharGraficos(); }, 700);
+  }
+  function janelaDados() {
+    const desde = Date.now() - est.janela * 1000;
+    const pts = est.historico.filter((r) => r.t >= desde);
+    const MAX = 240;
+    if (pts.length <= MAX) return pts;
+    const passo = pts.length / MAX, saida = [];           // média por blocos para não pesar o gráfico
+    for (let i = 0; i < MAX; i++) {
+      const bloco = pts.slice(Math.floor(i * passo), Math.floor((i + 1) * passo));
+      const media = (k) => { const v = bloco.map((r) => r[k]).filter(ehNum); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+      saida.push({ t: bloco[bloco.length - 1].t, temp: media('temp'), corrente: media('corrente'), incl: media('incl') });
+    }
+    return saida;
+  }
+  function desenharGraficos() {
+    if (!graficos.temp) return;
+    const pts = janelaDados();
+    const rotulos = pts.map((r) => hora(r.t));
+    for (const k of ['temp', 'corrente', 'incl']) {
+      const g = graficos[k];
+      g.data.labels = rotulos;
+      g.data.datasets[0].data = pts.map((r) => ehNum(r[k]) ? r[k] : null);
+      g.options.plugins.limites.warn = limites[k].warn;
+      g.options.plugins.limites.crit = limites[k].crit;
+      g.options.scales.y.suggestedMax = limites[k].crit * 1.1;
+      g.update('none');
+    }
+  }
+  function desenharTabela() {
+    const corpo = $('corpoTabela');
+    corpo.replaceChildren();
+    const linhas = est.historico.slice(-15).reverse();
+    if (!linhas.length) {
+      const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 5; td.textContent = 'Sem leituras ainda.';
+      tr.appendChild(td); corpo.appendChild(tr); return;
+    }
+    for (const r of linhas) {
+      const tr = document.createElement('tr');
+      for (const v of [hora(r.t), fmt(r.temp, 1), fmt(r.corrente, 2), fmt(r.incl, 1), fmt(r.rpm, 0)]) {
+        const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+      }
+      corpo.appendChild(tr);
+    }
+  }
+
+  function exportarCsv() {
+    if (!est.historico.length) { registrarEvento('info', 'Ainda não há leituras para exportar.'); return; }
+    const nomeNivel = (n) => n === null || n === undefined ? '' : ['normal', 'atencao', 'critico'][n];
+    const num = (v, c) => ehNum(v) ? v.toFixed(c).replace('.', ',') : '';
+    const linhas = ['data_hora;temperatura_c;corrente_a;potencia_w;inclinacao_graus;rotacao_rpm;nivel_temperatura;nivel_corrente;nivel_inclinacao'];
+    for (const r of est.historico) {
+      linhas.push([new Date(r.t).toLocaleString('pt-BR'), num(r.temp, 2), num(r.corrente, 3), num(r.potencia, 1), num(r.incl, 2), num(r.rpm, 0),
+        nomeNivel(r.nT), nomeNivel(r.nC), nomeNivel(r.nI)].join(';'));
+    }
+    const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const d = new Date(), p2 = (n) => String(n).padStart(2, '0');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `smartfactory_bancada_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    registrarEvento('info', `CSV exportado com ${est.historico.length} leituras.`);
+  }
+
+  // ---------- diálogo de limites ----------
+  const dlg = $('dlgLimites');
+  const camposLim = { tw: $('limTempW'), tc: $('limTempC'), cw: $('limCorW'), cc: $('limCorC'), iw: $('limInclW'), ic: $('limInclC'), ppr: $('limPpr') };
+  function preencherLimites(l) {
+    camposLim.tw.value = l.temp.warn; camposLim.tc.value = l.temp.crit;
+    camposLim.cw.value = l.corrente.warn; camposLim.cc.value = l.corrente.crit;
+    camposLim.iw.value = l.incl.warn; camposLim.ic.value = l.incl.crit;
+    camposLim.ppr.value = l.ppr; $('erroLimites').textContent = '';
+  }
+  $('btnLimites').addEventListener('click', () => { preencherLimites(limites); dlg.showModal(); });
+  $('btnCancelarLimites').addEventListener('click', () => dlg.close());
+  $('btnPadrao').addEventListener('click', () => preencherLimites(LIM_PADRAO));
+  $('formLimites').addEventListener('submit', (e) => {
+    const n = (el) => parseFloat(String(el.value).replace(',', '.'));
+    const novo = {
+      temp: { warn: n(camposLim.tw), crit: n(camposLim.tc) },
+      corrente: { warn: n(camposLim.cw), crit: n(camposLim.cc) },
+      incl: { warn: n(camposLim.iw), crit: n(camposLim.ic) },
+      ppr: Math.max(1, Math.round(n(camposLim.ppr)) || 1)
+    };
+    for (const [k, nome] of [['temp', 'temperatura'], ['corrente', 'corrente'], ['incl', 'inclinação']]) {
+      const l = novo[k];
+      if (!(l.warn > 0) || !(l.crit > l.warn)) {
+        e.preventDefault();
+        $('erroLimites').textContent = `Na ${nome}, o limite crítico precisa ser maior que o de atenção, e os dois maiores que zero.`;
+        return;
+      }
+    }
+    limites = novo;
+    salvarArmazenado('bancadaImbil.limites', limites);
+    registrarEvento('info', `Limites atualizados: temperatura ${fmt(limites.temp.warn, 1)}/${fmt(limites.temp.crit, 1)} °C, corrente ${fmt(limites.corrente.warn, 1)}/${fmt(limites.corrente.crit, 1)} A, inclinação ${fmt(limites.incl.warn, 1)}/${fmt(limites.incl.crit, 1)}°.`);
+    if (est.recebidoEm) processar(); else { desenharLeituras(); atualizarRelogio(); }
+    desenharGraficos();
+  });
+
+  // ---------- ligações da interface ----------
+  $('formConexao').addEventListener('submit', (e) => { e.preventDefault(); conectar(); });
+  $('btnDesconectar').addEventListener('click', () => desconectar());
+  $('btnZerar').addEventListener('click', () => enviarComando('reset_pulsos'));
+  $('btnZerarIncl').addEventListener('click', () => enviarComando('zerar_inclinacao'));
+  $('btnCsv').addEventListener('click', exportarCsv);
+  $('btnLimparEventos').addEventListener('click', () => { est.eventos = []; desenharEventos(); });
+  $('btnTabela').addEventListener('click', (e) => {
+    est.tabela = !est.tabela;
+    e.currentTarget.setAttribute('aria-pressed', String(est.tabela));
+    $('areaTabela').hidden = !est.tabela;
+    if (est.tabela) desenharTabela();
+  });
+  $('janelas').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-janela]');
+    if (!b) return;
+    est.janela = +b.dataset.janela;
+    for (const x of $('janelas').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b));
+    desenharGraficos();
+  });
+  $('detJson').addEventListener('toggle', () => { if ($('detJson').open) desenharJson(); });
+
+  // ---------- início ----------
+  prepararGauge('gaugeBancada'); prepararGauge('gaugeMotor');
+  preencherFormulario();
+  desenharEventos();
+  criarGraficos();
+  desenharLeituras(); desenharDetalhes(); atualizarRelogio();
+  setInterval(atualizarRelogio, 1000);
+
+  async function paginaVeioDaPlaca() {
+    if (location.protocol !== 'http:' || !location.host || ['localhost', '127.0.0.1'].includes(location.hostname)) return false;
+    const ctrl = new AbortController();
+    const limite = setTimeout(() => ctrl.abort(), 2500);
+    try {
+      const r = await fetch('/data', { cache: 'no-store', signal: ctrl.signal });
+      const d = await r.json();
+      return !!(d && (d.corrente || d.termopar || d.mpu6050));
+    } catch { return false; } finally { clearTimeout(limite); }
+  }
+  (async () => {
+    if (await paginaVeioDaPlaca()) {                        // aberto em http://IP-DA-PLACA/
+      cfg.modo = 'direto'; cfg.ipPlaca = location.host;
+      preencherFormulario(); conectar(); return;
+    }
+    if (cfg.modo === 'direto') {
+      if (cfg.ipPlaca) conectar();
+      else mensagemConexao('Digite o IP da placa (aparece no Monitor Serial) e clique em Conectar. Ou escolha "Broker MQTT".');
+    } else if (typeof window.mqtt === 'undefined') {
+      estadoBroker('erro', 'MQTT.js indisponível');
+      mensagemConexao('A biblioteca MQTT.js não carregou. Verifique a internet deste computador e recarregue a página.', 'erro');
+    } else {
+      conectar();                                           // conecta com a última configuração usada
+    }
+  })();
+})();
+</script>
+
+</body>
+</html>
